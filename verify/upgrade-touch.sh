@@ -41,12 +41,31 @@ for n in $(seq 1 15); do
   sleep 1
 done
 grep -Fx 'native area retained' /tmp/area-result
+grip=
+for n in $(seq 1 30); do
+  grip=$(adb logcat -d -s WhaleTouchTest:I -v raw | sed -n 's/^grip coordinates //p' | tr -d '\r' | tail -1)
+  if [[ -n "$grip" ]]; then break; fi
+  sleep .3
+done
+test -n "$grip"
+read -r gx gy gx2 <<<"$grip"
+adb shell input motionevent DOWN "$gx" "$gy"
 for n in $(seq 1 20); do
   adb logcat -d -s WhaleTouchTest:I -v raw > /tmp/hold-result
-  if grep -Fx 'body held, dragged and released on valid floor' /tmp/hold-result; then break; fi
-  sleep 1
+  if grep -Fx 'valid floor shown' /tmp/hold-result; then break; fi
+  sleep .4
 done
-tail -14 /tmp/hold-result
+tail -15 /tmp/hold-result
+grep -Fx 'valid floor shown' /tmp/hold-result
+adb shell input motionevent MOVE "$gx2" "$gy"
+sleep .6
+adb shell input motionevent UP "$gx2" "$gy"
+for n in $(seq 1 16); do
+  adb logcat -d -s WhaleTouchTest:I -v raw > /tmp/hold-result
+  if grep -Fx 'body held, dragged and released on valid floor' /tmp/hold-result; then break; fi
+  sleep .5
+done
+tail -15 /tmp/hold-result
 grep -Fx 'body held, dragged and released on valid floor' /tmp/hold-result
 adb shell am force-stop dev.littlewhale.touchtest
 adb install /tmp/palm-host.apk

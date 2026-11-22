@@ -18,6 +18,11 @@ public final class TouchHost extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         view=new CharacterView(this);
+        view.setWebChromeClient(new android.webkit.WebChromeClient(){
+            @Override public boolean onConsoleMessage(android.webkit.ConsoleMessage m){
+                Log.i("WhaleTouchTest",m.message());return true;
+            }
+        });
         setContentView(view);
         Matrix.setIdentityM(pose.model,0);
         float scale=1.15f*.34f;
@@ -77,33 +82,21 @@ public final class TouchHost extends Activity {
             view.evaluateJavascript("window.__point=null; ['pointerdown','pointermove','pointerup'].forEach(k=>addEventListener(k,e=>window.__point=[e.clientX,e.clientY],true))",done->traceContour(vertices));
         });
     }
-    void pickupEvent(long start,int action,int offset){
-        float x=view.getWidth()/2f+offset;
-        float y=view.getHeight()*(.5f+(.5f-.4f*.5f)*.75f/1.15f);
-        android.view.MotionEvent e=android.view.MotionEvent.obtain(start,android.os.SystemClock.uptimeMillis(),action,x,y,0);
-        e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);view.dispatchTouchEvent(e);e.recycle();
-    }
     void testPickup(){
-        view.evaluateJavascript("document.getElementById('area-cancel').click()",unused->{
-            long down=android.os.SystemClock.uptimeMillis();
-            pickupEvent(down,0,0);
-            pollPickup(down,0);
-        });
-    }
-    void pollPickup(long down,int count){
-        view.evaluateJavascript("!document.getElementById('pickup-tip').hidden",value->{
-            if("true".equals(value)){
-                int dx=Math.round(view.getHeight()*.048f);
-                pickupEvent(down,2,dx);
-                handler.postDelayed(()->view.evaluateJavascript("document.getElementById('pickup-tip').textContent",tip->{
-                    if(!tip.contains("绿圈")){Log.e("WhaleTouchTest","no valid drop: "+tip);return;}
-                    pickupEvent(down,1,dx);
-                    handler.postDelayed(()->view.evaluateJavascript("document.getElementById('pickup-tip').hidden",hidden->{
-                        if("true".equals(hidden))Log.i("WhaleTouchTest","body held, dragged and released on valid floor");
-                    }),400);
-                }),400);
-            }else if(count<40)handler.postDelayed(()->pollPickup(down,count+1),100);
-            else Log.e("WhaleTouchTest","body press did not activate");
+        // Wait for the earlier contour pointer-up before starting a new OS gesture.
+        view.evaluateJavascript("document.getElementById('area-cancel').click();true",done->{
+            handler.postDelayed(()->view.evaluateJavascript(
+                "(()=>{const tip=document.getElementById('pickup-tip');let visible=false;"+
+                "new MutationObserver(()=>{if(!tip.hidden&&tip.textContent.includes('绿圈')){visible=true;console.log('valid floor shown')}"+
+                "else if(visible&&tip.hidden){console.log('body held, dragged and released on valid floor');visible=false}})"+
+                ".observe(tip,{attributes:true,childList:true,subtree:true});"+
+                "for(const k of ['pointerdown','pointermove','pointerup','pointercancel'])addEventListener(k,e=>console.log(k+' '+e.clientX+' '+e.clientY),true);return true})()",
+                ready->{
+                    int[] pos=new int[2];view.getLocationOnScreen(pos);
+                    int x=pos[0]+view.getWidth()/2;
+                    int y=pos[1]+Math.round(view.getHeight()*(.5f+.3f*.75f/1.15f));
+                    Log.i("WhaleTouchTest","grip coordinates "+x+" "+y+" "+(x+Math.round(view.getHeight()*.048f)));
+                }),250);
         });
     }
     void tick(){
