@@ -78,7 +78,7 @@ function draw(now){
     face.apply(Math.max(blink,tap*.75,affection*.74),affection,gazeX,gazeY);
     const breath=Math.sin(now*.0017);
     for(const [bone,rest,amount,basis] of joints){
-        const share=bone===upper?.08:bone===neck?.34:.58;
+        const share=bone===upper ? .08 : bone===neck ? .34 : .58;
         const pitch=(bone===upper?breath*.018:0)-headPitch*share + (tap*.13+affection*.19)*amount;
         angles.set(pitch,amount*lead+headYaw*share,affection*(.25+.07*Math.sin(now*.004))*amount,'YXZ');
         applyRotation(bone,rest,basis,angles);
@@ -87,7 +87,7 @@ function draw(now){
     for(const [bone,rest,basis,side,kind] of walkBones){
         let swing=side*stride;
         if(kind==='UpperArm')swing*=-.22;
-        else if(kind==='LowerLeg')swing=-Math.max(0,-swing)*.48;
+        else if(kind==='LowerLeg')swing=Math.max(0,-swing)*.48;
         else swing*=.40;
         angles.set(swing*gait,0,0);
         applyRotation(bone,rest,basis,angles);
