@@ -35,8 +35,10 @@ adb logcat -d -s WhaleTouchTest:I -v raw | tee /tmp/whale-touch.log
 grep -Fx 'pet entered' /tmp/whale-touch.log
 grep -Fx 'pet released' /tmp/whale-touch.log
 
-coords=$(adb logcat -d -s WhaleTouchTest:I -v raw | sed -n 's/^boundary //p' | tr -d '\r' | head -1)
-read -r x1 y1 x2 y2 x3 y3 x4 y4 <<<"$coords"
-adb shell "input motionevent DOWN $x1 $y1; input motionevent MOVE $x2 $y2; input motionevent MOVE $x3 $y3; input motionevent MOVE $x4 $y4; input motionevent UP $x4 $y4"
-sleep 2
-adb logcat -d -s WhaleTouchTest:I -v raw | grep -Fx 'native area retained'
+for n in $(seq 1 15); do
+  adb logcat -d -s WhaleTouchTest:I -v raw > /tmp/area-result
+  if grep -Fx 'native area retained' /tmp/area-result; then exit 0; fi
+  sleep 1
+done
+tail -15 /tmp/area-result
+exit 1

@@ -28,6 +28,30 @@ public final class TouchHost extends Activity {
         handler.post(this::tick);
     }
     boolean editing,checking;
+    void traceContour(int[][] vertices){
+        new Thread(()->{
+            android.app.Instrumentation input=new android.app.Instrumentation();
+            long start=android.os.SystemClock.uptimeMillis();
+            try{
+                for(int edge=0;edge<vertices.length;edge++){
+                    int[] a=vertices[edge],b=vertices[(edge+1)%vertices.length];
+                    for(int i=0;i<=8;i++){
+                        float t=i/8f;
+                        int action=edge==0 && i==0?android.view.MotionEvent.ACTION_DOWN:
+                            edge==vertices.length-1 && i==8?android.view.MotionEvent.ACTION_UP:android.view.MotionEvent.ACTION_MOVE;
+                        android.view.MotionEvent event=android.view.MotionEvent.obtain(start,android.os.SystemClock.uptimeMillis(),
+                            action,a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,0);
+                        event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                        input.sendPointerSync(event);event.recycle();
+                        android.os.SystemClock.sleep(45);
+                    }
+                }
+                view.postDelayed(()->view.evaluateJavascript(
+                    "JSON.stringify([document.getElementById('area-panel').hidden,document.getElementById('area-tip').textContent,window.__samples])",
+                    x->Log.i("WhaleTouchTest","end of stroke "+x)),800);
+            }catch(Exception e){Log.e("WhaleTouchTest","input gesture",e);}
+        }).start();
+    }
     void startBoundary(){
         view.setSize(50);
         view.editArea();
@@ -35,12 +59,15 @@ public final class TouchHost extends Activity {
             if(!"true".equals(result)){Log.e("WhaleTouchTest","area menu unavailable");return;}
             int[] at=new int[2];view.getLocationOnScreen(at);
             StringBuilder coords=new StringBuilder("boundary");
+            int[][] vertices=new int[4][2];int i=0;
             for(float[] p:new float[][]{{-.23f,-.42f},{.23f,-.42f},{.23f,.22f},{-.23f,.22f}}){
                 float depth=1.15f-p[1]; int h=view.getHeight();
-                coords.append(" ").append(at[0]+view.getWidth()/2+Math.round(.75f*h*p[0]/depth));
-                coords.append(" ").append(at[1]+Math.round(h*(.5f+.375f/depth)));
+                vertices[i][0]=at[0]+view.getWidth()/2+Math.round(.75f*h*p[0]/depth);
+                vertices[i][1]=at[1]+Math.round(h*(.5f+.375f/depth));
+                coords.append(" ").append(vertices[i][0]).append(" ").append(vertices[i][1]);i++;
             }
             editing=true;Log.i("WhaleTouchTest",coords.toString());
+            view.evaluateJavascript("window.__samples=[]; ['pointerdown','pointerup','pointercancel'].forEach(k=>addEventListener(k,e=>window.__samples.push([k,e.clientX,e.clientY,e.target.tagName]),true))",done->traceContour(vertices));
         });
     }
     void tick(){
