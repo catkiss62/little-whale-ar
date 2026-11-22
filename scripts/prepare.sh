@@ -29,6 +29,10 @@ if ! echo "$digest  $model" | sha256sum --check --status 2>/dev/null; then
 fi
 # Reuse the tracking engine's already linked OpenCV modules in the book-cover lab.
 cp app/src/main/cpp/image_reference.cpp upstream/MenthaAR/src/main/cpp/whale_image_reference.cpp
-if ! grep -q whale_image_reference.cpp upstream/MenthaAR/CMakeLists.txt; then
-  echo 'target_sources(MenthaAR_Engine PRIVATE src/main/cpp/whale_image_reference.cpp)' >> upstream/MenthaAR/CMakeLists.txt
+cmake_file=upstream/MenthaAR/CMakeLists.txt
+if ! grep -q '^    src/main/cpp/whale_image_reference.cpp$' "$cmake_file"; then
+  # An earlier checkout may have the old tail append attached to its final endif().
+  sed -i 's@target_sources(MenthaAR_Engine PRIVATE src/main/cpp/whale_image_reference.cpp)@@' "$cmake_file"
+  sed -i '/^add_library(MenthaAR_Engine SHARED$/a\    src/main/cpp/whale_image_reference.cpp' "$cmake_file"
+  grep -Fxq '    src/main/cpp/whale_image_reference.cpp' "$cmake_file"
 fi
