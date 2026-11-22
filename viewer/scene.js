@@ -16,6 +16,7 @@ let renderer, root, head, neck, upper, tail, ready=false, shown=false, raf=0, ge
 let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
 const attention=new Attention(),roam=new Roam();
 let area,pickup,motions,deskPoseTime=-Infinity;
+let referenceWalk=true;
 let swayX=0,swayY=0,lidsUntil=-Infinity;
 let landedAt=-Infinity,landingHeight=0,standingY=0;
 const palm=new PalmSurface();
@@ -46,13 +47,13 @@ function draw(now){
     nextFrame=nextFrame && now-nextFrame<step ? nextFrame+step : now+step;
     const dt=lastDraw ? Math.min(.1,(now-lastDraw)/1000) : 0;
     lastDraw=now;
-    if(gesture?.part==='body'){
+    if(gesture?.crown || gesture?.part==='held'){
         if(now-deskPoseTime>1800)cancelTouch();
-        else if(!pickup.source && now-gesture.start>=480){
-            pickup.begin(gesture,now);
-            if(turnStart>=0)turnStart=-1;
+        else if(gesture.crown && !gesture.petting && !gesture.outsideSince && now-gesture.start>=480){
+            gesture.part='held';gesture.crown=false;
+            pickup.begin(gesture,now);turnStart=-1;
         }
-        if(pickup.source)pickup.move(gesture,now);
+        if(pickup.source && !gesture.released)pickup.move(gesture,now);
     }
     motions?.restore();
     if(landingHeight){
@@ -123,10 +124,10 @@ function draw(now){
         if(kind==='UpperArm')swing*=-.22;
         else if(kind==='LowerLeg')swing=Math.max(0,-swing)*.48;
         else swing*=.40;
-        angles.set(motions?.locomotion_walk?0:swing*gait,0,0);
+        angles.set(referenceWalk && motions?.locomotion_walk?0:swing*gait,0,0);
         applyRotation(bone,rest,basis,angles);
     }
-    motions?.update(actor,now,!!pickup.source,roam.phase,gait);
+    motions?.update(actor,now,!!pickup.source,roam.phase,referenceWalk?gait:0);
     renderer.render(scene,camera);
     if(!sample){sample=now;count=0;}
     else if(++count && now-sample>=1000){
@@ -285,6 +286,11 @@ function beginTouch(e){
         }
         return;
     }
+    if(gesture?.part==='held' && !gesture.released && !e.isPrimary && !gesture.second){
+        pickup.move(gesture,performance.now());
+        gesture.second={id:e.pointerId,x:e.clientX,y:e.clientY};pickup.plane(gesture);
+        e.currentTarget.setPointerCapture(e.pointerId);return;
+    }
     if(!shown || !ready || gesture || !e.isPrimary)return;
     const bounds=renderer.domElement.getBoundingClientRect();
     pointer.set((e.clientX-bounds.left)/bounds.width*2-1,1-(e.clientY-bounds.top)/bounds.height*2);
@@ -296,27 +302,24 @@ function beginTouch(e){
     const b=headBounds();
     let obj=hit?.object;
     while(obj && obj!==tail)obj=obj.parent;
-    const part=obj?'tail':insideHead(e.clientX,e.clientY,b) && (hit || b.rx<=18)?'head':hit && !palm.site?'body':null;
+    const part=obj?'tail':insideHead(e.clientX,e.clientY,b) && (hit || b.rx<=18)?'head':null;
     if(!part)return;
     gesture={...b,id:e.pointerId,part,x:e.clientX,y:e.clientY,start:performance.now(),distance:0,outsideSince:0,petting:false};
-    if(part==='body'){
-        gesture.grab=anchor.worldToLocal(hit.point.clone());
-        gesture.downX=e.clientX;gesture.downY=e.clientY;
-    }
+    gesture.crown=part==='head' && !palm.site && e.clientY<=b.cy+.06*b.ry;
     roam.pause(2.5);attention.since=null;
     renderer.domElement.setPointerCapture(e.pointerId);
 }
 function moveTouch(e){
     if(area.editing){area.move(e);return;}
-    if(gesture?.id!==e.pointerId)return;
     const g=gesture;
-    if(g.part==='body' && !pickup.source && Math.hypot(e.clientX-g.downX,e.clientY-g.downY)>12){
-        cancelTouch();return;
-    }
+    if(!g || g.released)return;
+    if(g.second?.id===e.pointerId){g.second.x=e.clientX;g.second.y=e.clientY;return;}
+    if(g.id!==e.pointerId)return;
+    if(g.part==='held'){g.x=e.clientX;g.y=e.clientY;return;}
     if(g.part==='head'){
         Object.assign(g,headBounds());
         if(!insideHead(e.clientX,e.clientY,g,1.23)){
-            g.outsideSince ||= performance.now();
+            g.crown=false;g.outsideSince ||= performance.now();
             g.x=e.clientX;g.y=e.clientY;
             return;
         }
@@ -333,16 +336,21 @@ function moveTouch(e){
     g.distance+=Math.hypot(e.clientX-g.x,e.clientY-g.y);
     g.x=e.clientX;g.y=e.clientY;
     if(g.part==='head' && !g.petting && g.distance>=Math.max(4,Math.min(12,g.rx*.16))){
-        g.petting=true;
+        g.crown=false;g.petting=true;
         window.WhaleHost?.petting?.(true);
     }
 }
 function endTouch(e){
     if(area.editing){area.up(e);return;}
+    if(gesture?.second?.id===e.pointerId){
+        if(gesture.released)return;
+        moveTouch(e);pickup.move(gesture,performance.now());gesture.second=null;
+        pickup.vertical(gesture);return;
+    }
     if(gesture?.id!==e.pointerId)return;
     moveTouch(e);
     const g=gesture;
-    if(g?.part==='body'){
+    if(g?.part==='held'){
         const now=performance.now();
         // A release is acknowledged by the next good same-map pose. Native tracking
         // loss cancels the provisional position even if WebGL is temporarily slow.
@@ -433,7 +441,7 @@ function setSize(percent){
     roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
 }
 function editArea(){if(!shown || !ready)return false;cancelTouch();area.open();return true;}
-window.whale={loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,setPalmLift,editArea};
+window.whale={setReferenceWalk:on=>{referenceWalk=!!on;},loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,setPalmLift,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);
@@ -448,7 +456,7 @@ try{
     for(const event of ['pointercancel','lostpointercapture'])
         canvas.addEventListener(event,e=>{
             if(area.editing && area.id===e.pointerId)area.fail('触摸中断，请重新画一圈');
-            if(gesture?.id===e.pointerId && (event==='pointercancel' || !gesture.released))cancelTouch();
+            if((gesture?.id===e.pointerId || gesture?.second?.id===e.pointerId) && (event==='pointercancel' || !gesture.released))cancelTouch();
         });
     document.addEventListener('visibilitychange',()=>{if(document.hidden)hide();});
     renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();hide();feedback('error');});

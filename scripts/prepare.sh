@@ -27,3 +27,8 @@ if ! echo "$digest  $model" | sha256sum --check --status 2>/dev/null; then
   echo "$digest  $model.tmp" | sha256sum --check
   mv "$model.tmp" "$model"
 fi
+# Reuse the tracking engine's already linked OpenCV modules in the book-cover lab.
+cp app/src/main/cpp/image_reference.cpp upstream/MenthaAR/src/main/cpp/whale_image_reference.cpp
+if ! grep -q whale_image_reference.cpp upstream/MenthaAR/CMakeLists.txt; then
+  echo 'target_sources(MenthaAR_Engine PRIVATE src/main/cpp/whale_image_reference.cpp)' >> upstream/MenthaAR/CMakeLists.txt
+fi

@@ -17,6 +17,7 @@ final class CharacterView extends WebView {
     private final float[] mv=new float[16], projection=new float[16];
     private float scale;
     private boolean page, pending, visiblePose, disposed, started;
+    boolean referenceWalk=true;
     boolean beingPetted;
     String palmSide;
     private boolean sendingPalm;
@@ -39,7 +40,7 @@ final class CharacterView extends WebView {
             });}
             @JavascriptInterface public void status(String s){post(()->{
                 if(disposed)return;
-                if(s.equals("page")){page=true;state="waiting";setFrameLimit(frameLimit);setSize(sizePercent);setPalmLift(palmLift);startIfAvailable();}
+                if(s.equals("page")){page=true;state="waiting";setReferenceWalk(referenceWalk);setFrameLimit(frameLimit);setSize(sizePercent);setPalmLift(palmLift);startIfAvailable();}
                 else if(s.equals("ready")||s.equals("loading")||s.equals("error"))state=s;
             });}
         },"WhaleHost");
@@ -79,6 +80,10 @@ final class CharacterView extends WebView {
     void setFrameLimit(int limit){
         frameLimit=limit==30?30:60;
         if(page&&!disposed)evaluateJavascript("whale.setFrameLimit("+frameLimit+")",null);
+    }
+    void setReferenceWalk(boolean enabled){
+        referenceWalk=enabled;
+        if(page&&!disposed)evaluateJavascript("whale.setReferenceWalk("+enabled+")",null);
     }
     void setSize(int percent){
         sizePercent=Math.max(25,Math.min(200,percent));

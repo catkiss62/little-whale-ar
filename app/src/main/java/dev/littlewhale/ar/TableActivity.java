@@ -109,6 +109,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         cube = new CubeOverlay(this);
         whale = new CharacterView(this);
         whale.setFrameLimit(getPreferences(MODE_PRIVATE).getInt("frameLimit",60));
+        whale.setReferenceWalk(getPreferences(MODE_PRIVATE).getBoolean("referenceWalk",true));
         whale.setSize(getPreferences(MODE_PRIVATE).getInt("sizePercent",100));
         whale.setPalmLift(getPreferences(MODE_PRIVATE).getInt("palmLift",50));
         showWhale = palmMode || getPreferences(MODE_PRIVATE).getBoolean("character", true);
@@ -141,7 +142,16 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         page.addView(bar);
         characterMode = new Button(this);
         characterMode.setOnClickListener(v -> chooseMode());
-        page.addView(characterMode);
+        LinearLayout modesBar=new LinearLayout(this);
+        modesBar.addView(characterMode,new LinearLayout.LayoutParams(0,-2,1));
+        Button labs=new Button(this);labs.setText("定位对照");
+        labs.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("空间定位对照")
+            .setItems(new String[]{"当前引擎 · 原生方块","ARCore · 桌面与深度方块","参考图 · 书封或图片"},(d,i)->{
+                if(i==0)switchMode(false);
+                else if(!hasCamera())permission.launch(Manifest.permission.CAMERA);
+                else startActivity(new Intent(this,i==1?CoreLabActivity.class:ImageLabActivity.class));
+            }).show());
+        modesBar.addView(labs);page.addView(modesBar);
         setContentView(page);
         if (!hasCamera() && state == null) permission.launch(Manifest.permission.CAMERA);
     }
@@ -162,9 +172,18 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         if(installed){
             String[] modes={"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%",palmMode?"重新选择掌上站位":"绘制活动范围",palmMode?"掌上模式（当前）":"掌上模式","掌上站位微调 · "+whale.palmLift+"%"};
             int motionIndex=palmMode?8:7;
-            modes=java.util.Arrays.copyOf(modes,motionIndex+1);
+            modes=java.util.Arrays.copyOf(modes,motionIndex+2);
+            modes[motionIndex+1]="走路动作 · "+(whale.referenceWalk?"YuChat 原版":"早期 AR 版");
             modes[motionIndex]="导入提起和走路动作";
             dialog.setItems(modes,(d,index)->{
+                if(index==motionIndex+1){
+                    new AlertDialog.Builder(this).setTitle("走路动作").setSingleChoiceItems(
+                        new String[]{"YuChat 原版（默认）","早期 AR 版"},whale.referenceWalk?0:1,(choice,i)->{
+                            whale.setReferenceWalk(i==0);
+                            getPreferences(MODE_PRIVATE).edit().putBoolean("referenceWalk",i==0).apply();choice.dismiss();
+                        }).show();
+                    return;
+                }
                 if(index==motionIndex){pickMotions.launch(new String[]{"*/*"});return;}
                 if(index==7){
                     new AlertDialog.Builder(this).setTitle("掌上站位微调")
@@ -377,7 +396,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             if(otherMap) message="正在另一张地图 · 对准原来的桌面";
             else if(!tracked || recovering) message="正在找回原位 · 对准刚才的桌面";
             else if(showWhale && whale.beingPetted) message="正在摸头";
-            else message=showWhale?"已放置 · 摸头、点尾巴，长按身体可提起":"已放置 · 绕桌观察不同颜色的面";
+            else message=showWhale?"已放置 · 摸头、点尾巴，长按头顶提起":"已放置 · 绕桌观察不同颜色的面";
         } else if (!tracked) {
             message = "正在定位手机 · 对准桌面纹理，缓慢左右平移";
         } else if (requestTime != 0) {

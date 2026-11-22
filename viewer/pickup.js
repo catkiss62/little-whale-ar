@@ -15,25 +15,40 @@ export class Pickup {
     }
     begin(g,now){
         this.source=this.actor.position.clone();
-        const feet=this.point.copy(this.source).applyMatrix4(this.anchor.matrixWorld).project(this.camera);
-        this.offsetX=(1+feet.x)*innerWidth/2-g.x;
-        this.offsetY=(1-feet.y)*innerHeight/2-g.y;
+        this.target={x:this.source.x,z:this.source.z};
         this.since=now;this.tip.hidden=false;
+        this.vertical(g);
+        this.liftStart=true;
+    }
+    vertical(g){
+        this.baseHeight=this.actor.position.y;
+        this.baseY=g.y;
+        this.liftStart=false;
+    }
+    plane(g){
+        const feet=this.point.set(this.actor.position.x,0,this.actor.position.z);
+        this.anchor.updateWorldMatrix(true,false);
+        feet.applyMatrix4(this.anchor.matrixWorld).project(this.camera);
+        this.offsetX=(1+feet.x)*innerWidth/2-(g.x+g.second.x)/2;
+        this.offsetY=(1-feet.y)*innerHeight/2-(g.y+g.second.y)/2;
     }
     move(g,now){
         if(!this.source)return;
         const {actor,marker}=this,size=actor.scale.x;
-        const x=g.x+this.offsetX,y=g.y+this.offsetY;
-        const visible=g.x>=0 && g.x<=innerWidth && g.y>=0 && g.y<=innerHeight &&
-            x>=0 && x<=innerWidth && y>=0 && y<=innerHeight;
-        this.target=visible?this.area.project(x,y):null;
+        if(g.second){
+            const x=(g.x+g.second.x)/2+this.offsetX,y=(g.y+g.second.y)/2+this.offsetY;
+            this.target=x>=0 && x<=innerWidth && y>=0 && y<=innerHeight?this.area.project(x,y):null;
+            if(this.target){actor.position.x=this.target.x;actor.position.z=this.target.z;}
+        }else{
+            const rise=this.liftStart ? .18*size*Math.min(1,(now-this.since)/140):0;
+            const dy=(this.baseY-g.y)*size/Math.max(36,g.ry*3.2);
+            actor.position.y=Math.min(3*size,Math.max(0,this.baseHeight+rise+dy));
+        }
         marker.visible=!!this.target;
         if(this.target){
-            const {x,z}=this.target;
-            actor.position.set(x,.23*size*Math.min(1,(now-this.since)/160),z);
-            marker.position.set(x,.006*size,z);marker.scale.setScalar(size);
+            marker.position.set(this.target.x,.006*size,this.target.z);marker.scale.setScalar(size);
         }
-        const message=this.target?'松手放在绿圈处':'请把落点移回可见的桌面';
+        const message=!this.target?'双指移回可见桌面':g.second?'双指平移 · 主指松手放在绿圈处':'上下拖动调高度 · 加一指平移 · 松手落在绿圈';
         if(this.tip.textContent!==message)this.tip.textContent=message;
     }
     end(commit=false){

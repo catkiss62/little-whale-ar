@@ -1,0 +1,93 @@
+package dev.littlewhale.ar;
+
+import android.opengl.*;
+import com.google.ar.core.*;
+import java.nio.*;
+import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.opengles.GL10;
+import static android.opengl.GLES20.*;
+
+final class CoreLabRenderer implements GLSurfaceView.Renderer {
+    private static final int OES=GLES11Ext.GL_TEXTURE_EXTERNAL_OES;
+    private final CoreLabActivity activity;
+    private final FloatBuffer quad=buffer(-1,-1,1,-1,-1,1,1,1),uv=buffer(0,0,0,0,0,0,0,0);
+    private final FloatBuffer cube;
+    private final float[] projection=new float[16],view=new float[16],model=new float[16],mv=new float[16],mvp=new float[16];
+    private volatile Session session;
+    private Anchor anchor;
+    private int bg,solid,texture,width,height;
+    private float touchX=-1,touchY;
+    private boolean depthMode,textureBound,missed;
+    private String last="";
+    CoreLabRenderer(CoreLabActivity activity){
+        this.activity=activity;
+        // Counterpart of the comparison cube, side = 8 cm, origin at sole.
+        int[] faces={0,1,3,0,3,2,4,6,7,4,7,5,0,4,5,0,5,1,2,3,7,2,7,6,0,2,6,0,6,4,1,5,7,1,7,3};
+        float[] v=new float[faces.length*3];
+        for(int i=0;i<faces.length;i++){int j=faces[i];v[3*i]=((j&1)-.5f)*.08f;v[3*i+1]=((j>>1)&1)*.08f;v[3*i+2]=(((j>>2)&1)-.5f)*.08f;}
+        cube=buffer(v);
+    }
+    void attach(Session s){session=s;}
+    void tap(float x,float y){touchX=x;touchY=y;}
+    void changeMode(){depthMode=!depthMode;if(anchor!=null)anchor.detach();anchor=null;touchX=-1;missed=false;activity.modeLabel(depthMode);}
+    static FloatBuffer buffer(float... a){
+        FloatBuffer b=ByteBuffer.allocateDirect(a.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer();b.put(a).rewind();return b;
+    }
+    private static int shader(int type,String source){
+        int s=glCreateShader(type);glShaderSource(s,source);glCompileShader(s);
+        int[] ok={0};glGetShaderiv(s,GL_COMPILE_STATUS,ok,0);if(ok[0]==0)throw new IllegalStateException(glGetShaderInfoLog(s));return s;
+    }
+    private static int program(String vertex,String fragment){
+        int p=glCreateProgram(),v=shader(GL_VERTEX_SHADER,vertex),f=shader(GL_FRAGMENT_SHADER,fragment);
+        glAttachShader(p,v);glAttachShader(p,f);glBindAttribLocation(p,0,"pos");glBindAttribLocation(p,1,"uv");
+        glLinkProgram(p);glDeleteShader(v);glDeleteShader(f);
+        int[] ok={0};glGetProgramiv(p,GL_LINK_STATUS,ok,0);if(ok[0]==0)throw new IllegalStateException(glGetProgramInfoLog(p));return p;
+    }
+    public void onSurfaceCreated(GL10 gl,EGLConfig ignored){
+        bg=program("attribute vec2 pos,uv;varying vec2 t;void main(){gl_Position=vec4(pos,0.,1.);t=uv;}",
+            "#extension GL_OES_EGL_image_external : require\nprecision mediump float;uniform samplerExternalOES cam;varying vec2 t;void main(){gl_FragColor=texture2D(cam,t);}");
+        solid=program("attribute vec3 pos;uniform mat4 m;void main(){gl_Position=m*vec4(pos,1.);}",
+            "precision mediump float;uniform vec3 col;void main(){gl_FragColor=vec4(col,1.);}");
+        int[] tex={0};glGenTextures(1,tex,0);texture=tex[0];glBindTexture(OES,texture);
+        glTexParameteri(OES,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(OES,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+        glTexParameteri(OES,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(OES,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+        textureBound=false;
+    }
+    public void onSurfaceChanged(GL10 gl,int w,int h){width=w;height=h;glViewport(0,0,w,h);}
+    private void status(String s){if(!last.equals(s)){last=s;activity.message(s);}}
+    public void onDrawFrame(GL10 ignored){
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+        Session s=session;if(s==null || width==0)return;
+        try{
+            if(!textureBound){s.setCameraTextureName(texture);textureBound=true;}
+            s.setDisplayGeometry(activity.getWindowManager().getDefaultDisplay().getRotation(),width,height);
+            Frame frame=s.update();Camera camera=frame.getCamera();
+            if(frame.getTimestamp()==0)return;
+            frame.transformCoordinates2d(Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,quad,Coordinates2d.TEXTURE_NORMALIZED,uv);
+            glDisable(GL_DEPTH_TEST);glUseProgram(bg);glActiveTexture(GL_TEXTURE0);glBindTexture(OES,texture);
+            glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
+            glVertexAttribPointer(0,2,GL_FLOAT,false,0,quad);glVertexAttribPointer(1,2,GL_FLOAT,false,0,uv);glDrawArrays(GL_TRIANGLE_STRIP,0,4);glDisableVertexAttribArray(1);
+            if(camera.getTrackingState()!=TrackingState.TRACKING){touchX=-1;status("ARCore 定位中 · "+camera.getTrackingFailureReason());return;}
+            if(touchX>=0){
+                missed=true;
+                for(HitResult hit:frame.hitTest(touchX,touchY)){
+                    Trackable t=hit.getTrackable();
+                    boolean valid=depthMode?t instanceof DepthPoint:t instanceof Plane && ((Plane)t).getType()==Plane.Type.HORIZONTAL_UPWARD_FACING && ((Plane)t).isPoseInPolygon(hit.getHitPose());
+                    if(valid && t.getTrackingState()==TrackingState.TRACKING){Anchor next=hit.createAnchor();if(anchor!=null)anchor.detach();anchor=next;missed=false;break;}
+                }
+                touchX=-1;
+            }
+            if(anchor==null||anchor.getTrackingState()!=TrackingState.TRACKING){
+                status(missed?"此处尚无有效落点 · 横移后再点":anchor==null?"定位正常 · 轻点桌面放方块":"锚点恢复中");return;
+            }
+            camera.getViewMatrix(view,0);camera.getProjectionMatrix(projection,0,.02f,30);
+            Pose pose=anchor.getPose();Matrix.setIdentityM(model,0);Matrix.translateM(model,0,pose.tx(),pose.ty(),pose.tz());
+            Matrix.multiplyMM(mv,0,view,0,model,0);Matrix.multiplyMM(mvp,0,projection,0,mv,0);
+            glEnable(GL_DEPTH_TEST);glUseProgram(solid);glUniformMatrix4fv(glGetUniformLocation(solid,"m"),1,false,mvp,0);
+            glVertexAttribPointer(0,3,GL_FLOAT,false,0,cube);
+            int color=glGetUniformLocation(solid,"col");
+            for(int i=0;i<6;i++){float light=.55f+.08f*i;glUniform3f(color,.25f*light,.76f*light,light);glDrawArrays(GL_TRIANGLES,i*6,6);}
+            status(missed?"新点未命中 · 保留原方块":depthMode?"深度锚点 · 8 厘米方块":"桌面锚点 · 8 厘米方块");
+        }catch(Exception e){status("ARCore 帧状态 · "+e.getClass().getSimpleName());}
+    }
+}
