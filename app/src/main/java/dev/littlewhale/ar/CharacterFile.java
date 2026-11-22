@@ -59,6 +59,29 @@ final class CharacterFile {
         for(byte b:bytes)s.append(Character.forDigit((b>>4)&15,16)).append(Character.forDigit(b&15,16));
         return s.toString();
     }
+    // Re-encode only oversized material textures. Limit simultaneous bitmap allocations.
+    static synchronized InputStream texture(Context c,long offset,long length)throws IOException{
+        File cache=new File(c.getCacheDir(),"v21-"+offset+"-"+length+".png");
+        if(cache.isFile())return new FileInputStream(cache);
+        android.graphics.BitmapFactory.Options opt=new android.graphics.BitmapFactory.Options();
+        opt.inJustDecodeBounds=true;
+        try(InputStream in=range(c,false,offset,length)){android.graphics.BitmapFactory.decodeStream(in,null,opt);}
+        int edge=Math.max(opt.outWidth,opt.outHeight);
+        if(edge<=1024)return range(c,false,offset,length);
+        opt.inJustDecodeBounds=false;opt.inSampleSize=1;
+        while(edge/opt.inSampleSize>1024)opt.inSampleSize*=2;
+        android.graphics.Bitmap bitmap;
+        try(InputStream in=range(c,false,offset,length)){bitmap=android.graphics.BitmapFactory.decodeStream(in,null,opt);}
+        if(bitmap==null)throw new IOException("Texture decode failed");
+        File part=new File(cache.getPath()+".part");
+        try{
+            try(OutputStream out=new BufferedOutputStream(new FileOutputStream(part))){
+                if(!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out))throw new IOException("Texture encode failed");
+            }
+            if(!part.renameTo(cache))throw new IOException("Texture cache unavailable");
+        }finally{bitmap.recycle();part.delete();}
+        return new FileInputStream(cache);
+    }
     // Serve bounded slices from the original. Never copy the 349 MB container into the Java or JS heap.
     static InputStream range(Context c, boolean json,long offset,long length) throws IOException{
         FileInputStream f=new FileInputStream(file(c));

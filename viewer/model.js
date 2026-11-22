@@ -12,6 +12,25 @@ export function prepareCharacter(doc) {
         // GLTFLoader copies extras into every render object. Model editing metadata is not needed here.
         delete node.extras;
     }
+    const liveMeshes=[], meshIds=new Map(), materials=new Set();
+    for (const [i,m] of doc.meshes.entries()) {
+        m.primitives=m.primitives.filter(p=>{
+            const mat=doc.materials[p.material];
+            return mat?.alphaMode!=='BLEND' || (mat.pbrMetallicRoughness?.baseColorFactor?.[3]??1)>0;
+        });
+        if(m.primitives.length){
+            meshIds.set(i,liveMeshes.length);liveMeshes.push(m);
+            m.primitives.forEach(p=>materials.add(p.material));
+        }
+    }
+    for(const n of doc.nodes) if(n.mesh!==undefined) {
+        if(meshIds.has(n.mesh)) n.mesh=meshIds.get(n.mesh);
+        else {delete n.mesh;delete n.skin;}
+    }
+    const materialIds=[...materials];
+    doc.meshes=liveMeshes;
+    for(const m of liveMeshes)for(const p of m.primitives)p.material=materialIds.indexOf(p.material);
+    doc.materials=materialIds.map(i=>doc.materials[i]);
     for (const mesh of doc.meshes) {
         delete mesh.weights; delete mesh.extras;
         for (const p of mesh.primitives) {
@@ -50,12 +69,16 @@ export function prepareCharacter(doc) {
     doc.textures = textures.map(i=>doc.textures[i]);
     for (const t of doc.textures) t.source = images.indexOf(t.source);
     doc.images = images.map(i=>doc.images[i]);
-    for (const image of doc.images) useView(image);
+    for (const image of doc.images) {
+        const v=doc.bufferViews[image.bufferView];
+        image.uri='image/'+(v.byteOffset||0)+'/'+v.byteLength;
+        delete image.bufferView;delete image.mimeType;
+    }
     const ids = [...views].sort((a,b)=>(doc.bufferViews[a].byteOffset||0)-(doc.bufferViews[b].byteOffset||0));
     const map = new Map(ids.map((id,i)=>[id,i]));
     const fix = obj=>{if (obj && obj.bufferView !== undefined) obj.bufferView=map.get(obj.bufferView);};
     for (const a of doc.accessors) {fix(a);fix(a.sparse?.indices);fix(a.sparse?.values);}
-    for (const image of doc.images) fix(image);
+
     const segments = [];
     doc.bufferViews = ids.map(id=>{
         const v = doc.bufferViews[id], start = v.byteOffset || 0, end = start + v.byteLength;

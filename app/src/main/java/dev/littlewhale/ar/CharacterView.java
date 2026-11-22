@@ -44,6 +44,8 @@ final class CharacterView extends WebView {
                             return reply(name.endsWith(".js")?"application/javascript":"text/html",c.getAssets().open("viewer/"+name));
                         if(name.equals("model.json"))return reply("application/json",CharacterFile.range(c,true,0,0));
                     }
+                    if(parts.size()==3 && parts.get(0).equals("image"))
+                        return reply("image/png",CharacterFile.texture(c,Long.parseLong(parts.get(1)),Long.parseLong(parts.get(2))));
                     if(parts.size()==3 && parts.get(0).equals("bin"))
                         return reply("application/octet-stream",CharacterFile.range(c,false,Long.parseLong(parts.get(1)),Long.parseLong(parts.get(2))));
                 }catch(Exception ignored){}

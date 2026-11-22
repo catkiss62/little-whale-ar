@@ -136,18 +136,19 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
 
     private void chooseMode() {
         boolean installed=CharacterFile.file(this).isFile();
-        String[] choices=installed ? new String[]{"小鲸鱼 V21","对照方块"} :
-            new String[]{"从作者 GitHub 下载 V21（约 333 MiB）","从手机选择 V21 .vrm","对照方块"};
-        new AlertDialog.Builder(this).setTitle("桌面角色")
-            .setMessage("SmallBlueFish · CF-612 / YuChat。形象参考「这个刀子真甜」，原形象 @ZipZipPipe、@上善无形。仅供个人非商用测试。")
-            .setPositiveButton("选择", (dialog,w)->new AlertDialog.Builder(this).setItems(choices,(d,index)->{
-                if(index==choices.length-1){switchMode(false);return;}
-                switchMode(true);
-                if(!installed){
-                    if(index==0)CharacterFile.obtain(this,null);
-                    else pickModel.launch(new String[]{"*/*"});
-                }else if("error".equals(whale.state)) recreate();
-            }).show()).setNegativeButton("返回",null).show();
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("桌面角色");
+        if(installed){
+            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块"},(d,index)->{
+                switchMode(index==0);
+                if(index==0 && "error".equals(whale.state)) recreate();
+            });
+        }else{
+            dialog.setMessage("小鲸鱼 V21 · 333 MiB，首次获取后可离线使用。模型来自 CF-612，形象参考「这个刀子真甜」，原形象 @ZipZipPipe、@上善无形。个人非商用测试。")
+                .setPositiveButton("作者原址下载",(d,w)->{switchMode(true);CharacterFile.obtain(this,null);})
+                .setNeutralButton("本机导入",(d,w)->{switchMode(true);pickModel.launch(new String[]{"*/*"});})
+                .setNegativeButton("对照方块",(d,w)->switchMode(false));
+        }
+        dialog.show();
     }
 
     private boolean hasCamera() { return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED; }
@@ -192,6 +193,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
 
     @Override protected void onResume() {
         super.onResume();
+        whale.onResume();
         startSession();
         refresh.run();
     }
@@ -205,6 +207,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             engine.stop();
             resetAnchor();
         }
+        whale.onPause();
         super.onPause();
     }
 
