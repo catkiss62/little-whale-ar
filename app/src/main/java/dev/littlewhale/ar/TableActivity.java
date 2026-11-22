@@ -297,14 +297,15 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             label = "重新扫描"; enabled = true;
             if(otherMap) message="正在另一张地图 · 对准原来的桌面";
             else if(!tracked || recovering) message="正在找回原位 · 对准刚才的桌面";
+            else if(showWhale && whale.beingPetted) message="正在摸头";
             else message=showWhale?"已放置 · 点额头、摸摸头，或绕到背后点尾巴":"已放置 · 绕桌观察不同颜色的面";
         } else if (!tracked) {
-            message = "对准有纹理的桌面，缓慢左右平移手机";
+            message = "正在定位手机 · 对准桌面纹理，缓慢左右平移";
         } else if (requestTime != 0) {
-            message = "正在拟合镜头中的桌面…";
+            message = "手机已定位 · 正在寻找桌面…";
         } else {
             enabled = true;
-            message = placementFailed ? "未找到平面 · 再扫一段桌面后重试" : "跟踪就绪 · 让目标桌面占满画面";
+            message = placementFailed ? "这次未找到桌面 · 对准书封或桌面纹理，横移后重试" : "手机已定位 · 对准目标桌面，点放置";
         }
         if (active && fps > 0) message += "\n定位 " + fps + " FPS";
         if (showWhale && whale.renderFps>0) message += " · 角色 " + whale.renderFps + " FPS";
