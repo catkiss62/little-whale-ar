@@ -27,7 +27,8 @@ jobs:
           sha256sum -c verify/release.sha256
           bt=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner | sort -V | tail -1)
           "$bt" verify --verbose --print-certs Little-Whale-AR-0.3.0-arm64.apk | tee /tmp/sig
-          grep -Fx 'Signer #1 certificate SHA-256 digest: 43df484ab6e086c882fd3cb8719c8de3439c81151f59b96af76faac3d4037b61' /tmp/sig
+          actual=$(sed -n 's/^.*certificate SHA-256 digest: //p' /tmp/sig | sort -u)
+          test "$actual" = '43df484ab6e086c882fd3cb8719c8de3439c81151f59b96af76faac3d4037b61'
       - uses: actions/upload-artifact@v4
         with:
           name: Little-Whale-AR-0.3.0-arm64
