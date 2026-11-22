@@ -95,6 +95,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         cube = new CubeOverlay(this);
         whale = new CharacterView(this);
         whale.setFrameLimit(getPreferences(MODE_PRIVATE).getInt("frameLimit",60));
+        whale.setSize(getPreferences(MODE_PRIVATE).getInt("sizePercent",100));
         showWhale = getPreferences(MODE_PRIVATE).getBoolean("character", true);
         FrameLayout.LayoutParams fit = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         preview.addView(camera, fit);
@@ -143,7 +144,23 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         boolean installed=CharacterFile.file(this).isFile();
         AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("桌面角色");
         if(installed){
-            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM"},(d,index)->{
+            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%","绘制活动范围"},(d,index)->{
+                if(index==5){whale.editArea();return;}
+                if(index==4){
+                    int[] sizes={25,50,75,100,125,150,200};
+                    String[] labels=new String[sizes.length];
+                    int selected=3;
+                    for(int i=0;i<sizes.length;i++){
+                        labels[i]=sizes[i]+"%";
+                        if(sizes[i]==whale.sizePercent)selected=i;
+                    }
+                    new AlertDialog.Builder(this).setTitle("模型大小").setSingleChoiceItems(labels,selected,(choice,which)->{
+                        whale.setSize(sizes[which]);
+                        getPreferences(MODE_PRIVATE).edit().putInt("sizePercent",whale.sizePercent).apply();
+                        choice.dismiss();
+                    }).show();
+                    return;
+                }
                 if(index==2){
                     new AlertDialog.Builder(this).setTitle("角色渲染帧率上限")
                         .setSingleChoiceItems(new String[]{"30 FPS","60 FPS"},whale.frameLimit==30?0:1,(choice,which)->{

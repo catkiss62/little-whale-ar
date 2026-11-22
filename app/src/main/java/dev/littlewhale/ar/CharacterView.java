@@ -18,7 +18,7 @@ final class CharacterView extends WebView {
     private float scale;
     private boolean page, pending, visiblePose, disposed, started;
     boolean beingPetted;
-    int renderFps, frameLimit=60;
+    int renderFps, frameLimit=60, sizePercent=100;
     String state="starting";
     CharacterView(Context c){
         super(c);
@@ -32,7 +32,7 @@ final class CharacterView extends WebView {
             @JavascriptInterface public void reportFps(int value){post(()->{if(visiblePose && !disposed)renderFps=value;});}
             @JavascriptInterface public void status(String s){post(()->{
                 if(disposed)return;
-                if(s.equals("page")){page=true;state="waiting";setFrameLimit(frameLimit);startIfAvailable();}
+                if(s.equals("page")){page=true;state="waiting";setFrameLimit(frameLimit);setSize(sizePercent);startIfAvailable();}
                 else if(s.equals("ready")||s.equals("loading")||s.equals("error"))state=s;
             });}
         },"WhaleHost");
@@ -70,6 +70,15 @@ final class CharacterView extends WebView {
     void setFrameLimit(int limit){
         frameLimit=limit==30?30:60;
         if(page&&!disposed)evaluateJavascript("whale.setFrameLimit("+frameLimit+")",null);
+    }
+    void setSize(int percent){
+        sizePercent=Math.max(25,Math.min(200,percent));
+        if(page && !disposed)evaluateJavascript("whale.setSize("+sizePercent+")",null);
+    }
+    void editArea(){
+        if(page && !disposed)evaluateJavascript("whale.editArea()",result->{
+            if(!"true".equals(result))android.widget.Toast.makeText(getContext(),"请先放置小鲸鱼并对准原桌面",android.widget.Toast.LENGTH_SHORT).show();
+        });
     }
     void clearPose(boolean reset){
         if(!visiblePose&&!reset)return;

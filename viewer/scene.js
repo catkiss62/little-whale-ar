@@ -3,13 +3,18 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {prepareCharacter} from './model.js';
 import {Face} from './motion.js';
 import {Attention} from './attention.js';
+import {Roam} from './roam.js';
+import {AreaEditor} from './area.js';
 
 const scene=new THREE.Scene(), camera=new THREE.Camera(), anchor=new THREE.Group(), actor=new THREE.Group();
 scene.add(anchor);anchor.add(actor);
 anchor.matrixAutoUpdate=false;camera.matrixAutoUpdate=false;
 let renderer, root, head, neck, upper, tail, ready=false, shown=false, raf=0, generation=0;
 let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
-const attention=new Attention();
+const attention=new Attention(),roam=new Roam();
+let area;
+const walkBones=[];
+let headYaw=0,headPitch=0,gait=0;
 const joints=[], ray=new THREE.Raycaster(), pointer=new THREE.Vector2(), eye=new THREE.Vector3();
 const inverse=new THREE.Matrix4(), rayNear=new THREE.Vector3(), rayFar=new THREE.Vector3();
 function feedback(state){window.WhaleHost?.status(state);}
@@ -41,12 +46,16 @@ function draw(now){
         actor.rotation.y=baseYaw+(targetYaw-baseYaw)*t*t*(3-2*t);
         if(t>=1)turnStart=-1;
     }
+    roam.advance(actor,dt,!!gesture || area.editing || turnStart>=0);
+    gait+=(roam.speed-gait)*(1-Math.exp(-dt*10));
     actor.updateWorldMatrix(true,false);
     head.getWorldPosition(headPoint);
     const direction=actor.worldToLocal(focus.set(0,0,0)).sub(actor.worldToLocal(headPoint));
     const front=direction.z>0;
     let x=front?clamp(Math.atan2(direction.x,direction.z)*1.8,.72):0;
     let y=front?clamp(Math.atan2(direction.y,Math.hypot(direction.x,direction.z)),.5):0;
+    const yaw=Math.atan2(direction.x,direction.z);
+    const pitch=Math.atan2(direction.y,Math.hypot(direction.x,direction.z));
     attention.look(now);
     if(!front || !attention.lookAtCamera){x=attention.idleX;y=attention.idleY;}
     if(gesture?.outsideSince && now-gesture.outsideSince>220)cancelTouch();
@@ -55,6 +64,11 @@ function draw(now){
         x=clamp((gesture.x-gesture.cx)/gesture.rx,.75);
         y=clamp((gesture.cy-gesture.y)/gesture.ry,.6);
     }
+    const cameraLook=attention.lookAtCamera && front && !gesture;
+    const wantedYaw=cameraLook?clamp(yaw,.78):x*.24;
+    const wantedPitch=cameraLook?clamp(pitch,.60):y*.15;
+    const headBlend=1-Math.exp(-dt*5);
+    headYaw+=(wantedYaw-headYaw)*headBlend; headPitch+=(wantedPitch-headPitch)*headBlend;
     const blend=1-Math.exp(-dt*8);
     gazeX+=(x-gazeX)*blend; gazeY+=(y-gazeY)*blend;
     affection+=((gesture?.petting?1:0)-affection)*(1-Math.exp(-dt*(gesture?.petting?7:3.5)));
@@ -63,10 +77,20 @@ function draw(now){
     const tap=Math.max(0,1-(now-tapAt)/650);
     face.apply(Math.max(blink,tap*.75,affection*.74),affection,gazeX,gazeY);
     const breath=Math.sin(now*.0017);
-    for(const [bone,rest,amount] of joints){
-        const pitch=bone===upper?breath*.018 : -gazeY*.10*amount + (tap*.13 + affection*.19)*amount;
-        angles.set(pitch,amount*(lead+gazeX*.30),affection*(.25+.07*Math.sin(now*.004))*amount,'YXZ');
-        bone.quaternion.copy(rest).multiply(deltaRotation.setFromEuler(angles));
+    for(const [bone,rest,amount,basis] of joints){
+        const share=bone===upper?.08:bone===neck?.34:.58;
+        const pitch=(bone===upper?breath*.018:0)-headPitch*share + (tap*.13+affection*.19)*amount;
+        angles.set(pitch,amount*lead+headYaw*share,affection*(.25+.07*Math.sin(now*.004))*amount,'YXZ');
+        applyRotation(bone,rest,basis,angles);
+    }
+    const stride=Math.sin(roam.phase);
+    for(const [bone,rest,basis,side,kind] of walkBones){
+        let swing=side*stride;
+        if(kind==='UpperArm')swing*=-.22;
+        else if(kind==='LowerLeg')swing=-Math.max(0,-swing)*.48;
+        else swing*=.40;
+        angles.set(swing*gait,0,0);
+        applyRotation(bone,rest,basis,angles);
     }
     renderer.render(scene,camera);
     if(!sample){sample=now;count=0;}
@@ -75,11 +99,18 @@ function draw(now){
         sample=now; count=0;
     }
 }
+const localDelta=new THREE.Quaternion();
+function applyRotation(bone,rest,basis,angles){
+    localDelta.copy(basis).invert().multiply(deltaRotation.setFromEuler(angles)).multiply(basis);
+    bone.quaternion.copy(rest).multiply(localDelta);
+}
 function cancelTouch(){
     if(gesture?.petting)window.WhaleHost?.petting?.(false);
     gesture=null;
 }
 function hide(){
+    if(area?.editing)area.cancel();
+    roam.pause();gait=0;headYaw=headPitch=0;
     shown=false; attention.reset(); cancelTouch(); affection=0;tapAt=-Infinity;gazeX=gazeY=0;
     sample=lastDraw=nextFrame=0;
     if(turnStart>=0){actor.rotation.y=targetYaw;turnStart=-1;}
@@ -89,17 +120,17 @@ function pose(mv,p){
     if(!renderer||!ready)return;
     anchor.matrix.fromArray(mv);anchor.matrixWorldNeedsUpdate=true;
     camera.projectionMatrix.fromArray(p);camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
-    eye.set(0,0,0).applyMatrix4(inverse.copy(anchor.matrix).invert());
+    eye.set(0,0,0).applyMatrix4(inverse.copy(anchor.matrix).invert()).sub(actor.position);
     if(faceOnPlace){
         actor.rotation.y=Math.atan2(eye.x,eye.z);
         faceOnPlace=false;
-    }else if(attention.stationaryBehind(performance.now(),eye,actor.rotation.y,!!gesture || turnStart>=0)){
-        turnToCamera(1300);
+    }else if(attention.stationaryBehind(performance.now(),eye,actor.rotation.y,!!gesture || area.editing || !!roam.target || turnStart>=0)){
+        roam.pause(2.5);turnToCamera(1300);
     }
     shown=true;request();
 }
 function disposeModel(){
-    ready=false;hide();joints.length=0;turnStart=-1;actor.rotation.y=0;
+    ready=false;hide();walkBones.length=0;joints.length=0;turnStart=-1;actor.rotation.y=0;
     if(!root)return;
     const textures=new Set();
     root.traverse(o=>{
@@ -156,7 +187,13 @@ async function load(){
         actor.add(root);
         headRadius=height*.155;
         blinkAt=performance.now()+2400;
-        for(const [b,amount] of [[upper,.22],[neck,.30],[head,.49]])if(b)joints.push([b,b.quaternion.clone(),amount]);
+        const actorInverse=actor.getWorldQuaternion(new THREE.Quaternion()).invert();
+        const basis=b=>actorInverse.clone().multiply(b.getWorldQuaternion(new THREE.Quaternion()));
+        for(const [b,amount] of [[upper,.22],[neck,.30],[head,.49]])if(b)joints.push([b,b.quaternion.clone(),amount,basis(b)]);
+        for(const [side,sign] of [['left',1],['right',-1]])for(const kind of ['UpperArm','UpperLeg','LowerLeg']){
+            const b=root.getObjectByName(names[side+kind]);
+            if(b)walkBones.push([b,b.quaternion.clone(),basis(b),sign,kind]);
+        }
         ready=true;feedback('ready');request();
     }catch(e){if(token!==generation)return;disposeModel();feedback('error');console.error(e);}
 }
@@ -176,6 +213,7 @@ function insideHead(x,y,b,margin=1){
     return Math.hypot((x-b.cx)/b.rx,(y-b.cy)/b.ry)<=margin;
 }
 function beginTouch(e){
+    if(area.editing){area.down(e);return;}
     if(!shown || !ready || gesture || !e.isPrimary)return;
     const bounds=renderer.domElement.getBoundingClientRect();
     pointer.set((e.clientX-bounds.left)/bounds.width*2-1,1-(e.clientY-bounds.top)/bounds.height*2);
@@ -190,10 +228,11 @@ function beginTouch(e){
     const part=obj?'tail':insideHead(e.clientX,e.clientY,b) && (hit || b.rx<=18)?'head':null;
     if(!part)return;
     gesture={...b,id:e.pointerId,part,x:e.clientX,y:e.clientY,start:performance.now(),distance:0,outsideSince:0,petting:false};
-    attention.since=null;
+    roam.pause(2.5);attention.since=null;
     renderer.domElement.setPointerCapture(e.pointerId);
 }
 function moveTouch(e){
+    if(area.editing){area.move(e);return;}
     if(gesture?.id!==e.pointerId)return;
     const g=gesture;
     if(g.part==='head'){
@@ -213,13 +252,14 @@ function moveTouch(e){
     }
 }
 function endTouch(e){
+    if(area.editing){area.up(e);return;}
     if(gesture?.id!==e.pointerId)return;
     moveTouch(e);
     const g=gesture;
     cancelTouch();
     if(!g || g.outsideSince || g.petting || g.distance>Math.max(9,g.rx*.30) || performance.now()-g.start>650)return;
     if(g.part==='head'){tapAt=performance.now();return;}
-    eye.set(0,0,0).applyMatrix4(inverse.copy(anchor.matrixWorld).invert());
+    eye.set(0,0,0).applyMatrix4(inverse.copy(anchor.matrixWorld).invert()).sub(actor.position);
     turnToCamera(850);
 }
 function turnToCamera(duration){
@@ -229,20 +269,29 @@ function turnToCamera(duration){
     targetYaw=baseYaw+Math.atan2(Math.sin(desired-baseYaw),Math.cos(desired-baseYaw));
     turnStart=performance.now();request();
 }
-function reset(){faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();}
+function reset(){roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();}
 function setFrameLimit(value){frameLimit=value===30?30:60;nextFrame=sample=0;}
-window.whale={pose,hide,load,reset,setFrameLimit};
+function setSize(percent){
+    actor.scale.setScalar(Math.max(.25,Math.min(2,percent/100)));
+    roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
+}
+function editArea(){if(!shown || !ready)return false;cancelTouch();area.open();return true;}
+window.whale={pose,hide,load,reset,setFrameLimit,setSize,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);
     document.body.appendChild(renderer.domElement);
+    area=new AreaEditor(anchor,camera,actor,roam);
     const canvas=renderer.domElement;
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
     canvas.addEventListener('pointerdown',beginTouch);
     canvas.addEventListener('pointermove',moveTouch);
     canvas.addEventListener('pointerup',endTouch);
     for(const event of ['pointercancel','lostpointercapture'])
-        canvas.addEventListener(event,e=>{if(gesture?.id===e.pointerId)cancelTouch();});
+        canvas.addEventListener(event,e=>{
+            if(area.editing && area.id===e.pointerId)area.fail('触摸中断，请重新画一圈');
+            if(gesture?.id===e.pointerId)cancelTouch();
+        });
     document.addEventListener('visibilitychange',()=>{if(document.hidden)hide();});
     renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();hide();feedback('error');});
     renderer.domElement.addEventListener('webglcontextrestored',load);
