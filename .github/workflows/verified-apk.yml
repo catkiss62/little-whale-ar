@@ -1,0 +1,69 @@
+name: Verify and deliver signed AR APK
+on:
+  push:
+    branches: ['delivery/**']
+    paths: ['verify/**', '.github/workflows/verified-apk.yml']
+permissions:
+  actions: read
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 45057828979
+          name: unsigned-candidate-0.8.0-arm64
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Reconstruct the exact locally signed release
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bsdiff
+          base64 -d verify/signature-delta.b64 > /tmp/release.patch
+          bspatch candidate/unsigned-candidate-0.8.0-arm64.apk Little-Whale-AR-0.8.0-arm64.apk /tmp/release.patch
+          sha256sum -c verify/release.sha256
+          bt=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner | sort -V | tail -1)
+          "$bt" verify --verbose --print-certs Little-Whale-AR-0.8.0-arm64.apk | tee /tmp/sig
+          actual=$(sed -n 's/^.*certificate SHA-256 digest: //p' /tmp/sig | sort -u)
+          test "$actual" = '43df484ab6e086c882fd3cb8719c8de3439c81151f59b96af76faac3d4037b61'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Little-Whale-AR-0.8.0-arm64
+          path: Little-Whale-AR-0.8.0-arm64.apk
+          if-no-files-found: error
+  upgrade:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Little-Whale-AR-0.8.0-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 45045684717
+          name: Little-Whale-AR-0.7.1-arm64
+          github-token: ${{ github.token }}
+          path: legacy
+      - name: Prepare Android touch harness and API 35 emulator
+        run: |
+          bash verify/build-host.sh
+          bash verify/build-palm.sh
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 6000M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash verify/upgrade-touch.sh
