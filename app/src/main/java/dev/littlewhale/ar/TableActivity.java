@@ -52,7 +52,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             new Thread(()->{
                 try{
                     ReferenceMotions.importFile(getApplicationContext(),uri);
-                    runOnUiThread(()->{if(!isDestroyed()){whale.evaluateJavascript("window.whale?.loadMotions()",null);motionToast("提起和走路动作已导入");}});
+                    runOnUiThread(()->{if(!isDestroyed()){whale.evaluateJavascript("window.whale?.loadMotions(true)",null);motionToast("提起和走路动作已导入");}});
                 }catch(Exception e){runOnUiThread(()->motionToast("动作导入失败 · "+e.getMessage()));}
             },"import-vr-motions").start();
         });

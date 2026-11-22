@@ -17,6 +17,7 @@ let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
 const attention=new Attention(),roam=new Roam();
 let area,pickup,motions,deskPoseTime=-Infinity;
 let swayX=0,swayY=0,lidsUntil=-Infinity;
+let landedAt=-Infinity,landingHeight=0,standingY=0;
 const palm=new PalmSurface();
 let settleYaw=0,settleStart=-Infinity;
 const walkBones=[];
@@ -54,6 +55,11 @@ function draw(now){
         if(pickup.source)pickup.move(gesture,now);
     }
     motions?.restore();
+    if(landingHeight){
+        const t=Math.min(1,Math.max(0,(now-landedAt)/180));
+        root.position.y=standingY+landingHeight*(1-t*t);
+        if(t===1)landingHeight=0;
+    }
     let turning=0,lateYaw=0;
     if(turnStart>=0){
         const t=Math.min(1,(now-turnStart)/turnDuration);
@@ -139,6 +145,8 @@ function cancelTouch(){
 }
 function hide(){
     deskPoseTime=-Infinity;motions?.reset();swayX=swayY=0;lidsUntil=-Infinity;
+    if(landingHeight && root)root.position.y=standingY;
+    landingHeight=0;
     palm.lose();settleYaw=0;settleStart=-Infinity;
     if(area?.editing)area.cancel();
     roam.pause();gait=0;headYaw=headPitch=0;
@@ -155,7 +163,11 @@ function pose(mv,p){
     camera.projectionMatrix.fromArray(p);camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
     if(gesture?.released){
         if(now-gesture.released<=1500){
-            pickup.move(gesture,now);pickup.end(true);
+            pickup.move(gesture,now);
+            if(pickup.target){
+                landingHeight=actor.position.y/actor.scale.y;landedAt=now;
+            }
+            pickup.end(true);
         }
         cancelTouch();
     }
@@ -225,6 +237,7 @@ async function load(){
         relaxArms(root,names);
         root.scale.multiplyScalar(1/height);
         root.position.add(new THREE.Vector3(-center.x,-box.min.y,-center.z).multiplyScalar(1/height));
+        standingY=root.position.y;
         actor.add(root);
         headRadius=height*.155;
         blinkAt=performance.now()+2400;
@@ -238,10 +251,10 @@ async function load(){
         ready=true;feedback('ready');request();loadMotions();
     }catch(e){if(token!==generation)return;disposeModel();feedback('error');console.error(e);}
 }
-async function loadMotions(){
+async function loadMotions(retry=false){
     const current=motions;
     if(!current)return;
-    try{await current.load();}
+    try{await current.load(retry);}
     catch(e){
         if(motions===current)window.WhaleHost?.motionError?.();
     }

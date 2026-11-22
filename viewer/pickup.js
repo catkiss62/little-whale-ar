@@ -33,7 +33,7 @@ export class Pickup {
             actor.position.set(x,.23*size*Math.min(1,(now-this.since)/160),z);
             marker.position.set(x,.006*size,z);marker.scale.setScalar(size);
         }
-        const message=this.target?'松手放在绿圈处':'请对准原桌面高度，出现绿圈后松手';
+        const message=this.target?'松手放在绿圈处':'请把落点移回可见的桌面';
         if(this.tip.textContent!==message)this.tip.textContent=message;
     }
     end(commit=false){

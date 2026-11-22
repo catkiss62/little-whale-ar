@@ -54,7 +54,8 @@ export class ReferenceMotion {
         this.headForward=new THREE.Vector3(0,0,1).applyQuaternion(this.rig.get('head').node.getWorldQuaternion(quat()).invert());
         this.reset();
     }
-    async load(){
+    async load(retry=false){
+        if(retry)await Promise.allSettled([...cache.values()]);
         await Promise.all(['grabbed','locomotion_walk'].map(async name=>{this[name]=await getClip(name);}));
     }
     restore(){
