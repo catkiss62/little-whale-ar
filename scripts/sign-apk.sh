@@ -10,6 +10,7 @@ trap 'rm -f "$stage"' EXIT
 "$signer" sign --ks "$AR_KEYSTORE" --ks-key-alias little-whale-ar --ks-pass "file:$AR_PASSWORD_FILE" \
     --v1-signing-enabled false --v4-signing-enabled false --out "$stage" "$1"
 report=$("$signer" verify --verbose --print-certs "$stage")
-grep -Fqx "Signer #1 certificate SHA-256 digest: $expected" <<< "$report"
+actual=$(sed -n 's/^.*certificate SHA-256 digest: //p' <<< "$report" | sort -u)
+[[ "$actual" == "$expected" ]]
 mv "$stage" "$2"
 sha256sum "$2"
