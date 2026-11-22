@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 pkg=dev.littlewhale.ar
-adb root
-adb wait-for-device
+for attempt in {1..8}; do
+  if timeout 15 adb wait-for-device && adb root; then
+    sleep 2
+    if timeout 15 adb wait-for-device && [[ "$(adb shell id -u | tr -d '\r')" == 0 ]]; then break; fi
+  fi
+  sleep 2
+done
+test "$(adb shell id -u | tr -d '\r')" = 0
 adb shell wm size 480x672
 adb shell wm density 160
 adb install legacy/Little-Whale-AR-0.6.2-arm64.apk
