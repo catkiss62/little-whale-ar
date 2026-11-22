@@ -44,7 +44,7 @@ function draw(now){
     const dt=lastDraw ? Math.min(.1,(now-lastDraw)/1000) : 0;
     lastDraw=now;
     if(gesture?.part==='body'){
-        if(now-deskPoseTime>500)cancelTouch();
+        if(now-deskPoseTime>1800)cancelTouch();
         else if(!pickup.source && now-gesture.start>=480){
             pickup.begin(gesture,now);
             if(turnStart>=0)turnStart=-1;
@@ -143,10 +143,15 @@ function hide(){
 function pose(mv,p){
     if(!renderer||!ready)return;
     const now=performance.now();
-    if(gesture?.part==='body' && now-deskPoseTime>500)cancelTouch();
     deskPoseTime=now;
     anchor.matrix.fromArray(mv);anchor.matrixWorldNeedsUpdate=true;
     camera.projectionMatrix.fromArray(p);camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+    if(gesture?.released){
+        if(now-gesture.released<=1500){
+            pickup.move(gesture,now);pickup.end(true);
+        }
+        cancelTouch();
+    }
     eye.set(0,0,0).applyMatrix4(inverse.copy(anchor.matrix).invert()).sub(actor.position);
     if(faceOnPlace){
         actor.rotation.y=Math.atan2(eye.x,eye.z);
@@ -301,10 +306,11 @@ function endTouch(e){
     const g=gesture;
     if(g?.part==='body'){
         const now=performance.now();
-        if(pickup.source && now-deskPoseTime<=500){
-            pickup.move(g,now);pickup.end(true);
-        }
-        cancelTouch();request();return;
+        // A release is acknowledged by the next good same-map pose. Native tracking
+        // loss cancels the provisional position even if WebGL is temporarily slow.
+        if(pickup.source)g.released=now;
+        else cancelTouch();
+        request();return;
     }
     cancelTouch();
     if(!g || g.outsideSince || g.petting || g.distance>Math.max(9,g.rx*.30) || performance.now()-g.start>650)return;
@@ -403,7 +409,7 @@ try{
     for(const event of ['pointercancel','lostpointercapture'])
         canvas.addEventListener(event,e=>{
             if(area.editing && area.id===e.pointerId)area.fail('触摸中断，请重新画一圈');
-            if(gesture?.id===e.pointerId)cancelTouch();
+            if(gesture?.id===e.pointerId && (event==='pointercancel' || !gesture.released))cancelTouch();
         });
     document.addEventListener('visibilitychange',()=>{if(document.hidden)hide();});
     renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();hide();feedback('error');});
