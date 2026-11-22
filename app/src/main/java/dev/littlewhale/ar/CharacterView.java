@@ -17,6 +17,7 @@ final class CharacterView extends WebView {
     private final float[] mv=new float[16], projection=new float[16];
     private float scale;
     private boolean page, pending, visiblePose, disposed, started;
+    int renderFps, frameLimit=60;
     String state="starting";
     CharacterView(Context c){
         super(c);
@@ -26,9 +27,10 @@ final class CharacterView extends WebView {
         getSettings().setAllowFileAccess(false);
         setWebChromeClient(new WebChromeClient());
         addJavascriptInterface(new Object(){
+            @JavascriptInterface public void reportFps(int value){post(()->{if(visiblePose && !disposed)renderFps=value;});}
             @JavascriptInterface public void status(String s){post(()->{
                 if(disposed)return;
-                if(s.equals("page")){page=true;state="waiting";startIfAvailable();}
+                if(s.equals("page")){page=true;state="waiting";setFrameLimit(frameLimit);startIfAvailable();}
                 else if(s.equals("ready")||s.equals("loading")||s.equals("error"))state=s;
             });}
         },"WhaleHost");
@@ -63,9 +65,13 @@ final class CharacterView extends WebView {
             started=true;state="loading";evaluateJavascript("whale.load()",null);
         }
     }
+    void setFrameLimit(int limit){
+        frameLimit=limit==30?30:60;
+        if(page&&!disposed)evaluateJavascript("whale.setFrameLimit("+frameLimit+")",null);
+    }
     void clearPose(boolean reset){
         if(!visiblePose&&!reset)return;
-        visiblePose=false;if(reset)scale=0;
+        visiblePose=false;renderFps=0;if(reset)scale=0;
         if(page&&!disposed)evaluateJavascript(reset?"whale.reset()":"whale.hide()",null);
     }
     void pose(MenthaAR.Result r,DisplayCorrection correction){

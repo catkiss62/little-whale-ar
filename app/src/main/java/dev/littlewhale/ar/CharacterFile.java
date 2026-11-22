@@ -8,14 +8,12 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.security.MessageDigest;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 
 final class CharacterFile {
     static final String SOURCE = "https://github.com/CF-612/SmallBlueFish-Model/releases/download/dot-test-20261104-v21-fullmodel/SmallBlueFish-V21-AllExpressions-Acceptance.vrm";
-    static final long SIZE = 348998140L;
-    private static final String SHA = "cf331c0f5c62f818b05bb7f132bd34424bdd99784bb908d5f4651d901f855514";
+    static final long SIZE = VrmCopy.SIZE;
     private static final ExecutorService worker = Executors.newSingleThreadExecutor();
     static volatile boolean busy;
     static volatile int percent;
@@ -36,16 +34,8 @@ final class CharacterFile {
                     source=connection.getInputStream();
                 } else source=app.getContentResolver().openInputStream(uri);
                 if(source==null) throw new IOException("无法读取所选文件");
-                MessageDigest digest=MessageDigest.getInstance("SHA-256");
                 try(InputStream in=source; FileOutputStream out=new FileOutputStream(temp)){
-                    byte[] buf=new byte[131072]; long count=0; int n;
-                    while((n=in.read(buf))!=-1){
-                        count+=n;
-                        if(count>SIZE) throw new IOException("文件与 V21 版本不符");
-                        out.write(buf,0,n);digest.update(buf,0,n);
-                        percent=(int)(100*count/SIZE);
-                    }
-                    if(count!=SIZE || !SHA.equals(hex(digest.digest()))) throw new IOException("V21 文件不完整或版本不符");
+                    VrmCopy.copy(in,out,p -> percent=p);
                 }
                 if(!temp.renameTo(file(app)))throw new IOException("保存模型失败");
             }catch(Exception e){
@@ -54,10 +44,27 @@ final class CharacterFile {
             }finally{temp.delete();busy=false;}
         });
     }
-    private static String hex(byte[] bytes){
-        StringBuilder s=new StringBuilder(64);
-        for(byte b:bytes)s.append(Character.forDigit((b>>4)&15,16)).append(Character.forDigit(b&15,16));
-        return s.toString();
+    static volatile boolean exporting;
+    static volatile int exportPercent;
+    static synchronized void exportOriginal(Context context, Uri uri) {
+        if(exporting)return;
+        final Context app=context.getApplicationContext();
+        exporting=true; exportPercent=0;
+        worker.execute(()->{
+            String result;
+            try(InputStream in=new FileInputStream(file(app));
+                OutputStream out=app.getContentResolver().openOutputStream(uri,"wt")){
+                if(out==null)throw new IOException("无法打开保存位置");
+                VrmCopy.copy(in,out,p -> exportPercent=p);
+                result="已导出完整 V21 原文件，可从本机再次导入";
+            }catch(Exception e){
+                Log.w("LittleWhaleAR","Model export",e);
+                result="导出失败，目标文件可能不完整，请重新选择保存位置";
+            }finally{exporting=false;}
+            final String message=result;
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(()->
+                android.widget.Toast.makeText(app,message,android.widget.Toast.LENGTH_LONG).show());
+        });
     }
     // Re-encode only oversized material textures. Limit simultaneous bitmap allocations.
     static synchronized InputStream texture(Context c,long offset,long length)throws IOException{

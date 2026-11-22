@@ -6,6 +6,23 @@ export function prepareCharacter(doc) {
     const names = {};
     for (const [key, value] of Object.entries(vrm.humanoid.humanBones))
         names[key] = doc.nodes[value.node].name;
+    const channels = ['blink','relaxed','lookLeft','lookRight','lookUp','lookDown'];
+    const targets = new Map(), uvBindings = new Map();
+    for(const channel of channels){
+        const expression=vrm.expressions?.preset?.[channel];
+        for(const {node,index,weight} of expression?.morphTargetBinds || []){
+            const mesh=doc.nodes[node].mesh;
+            if(!targets.has(mesh))targets.set(mesh,new Map());
+            const slots=targets.get(mesh);
+            if(!slots.has(index))slots.set(index,[]);
+            slots.get(index).push({channel,weight});
+        }
+        for(const {material,offset} of expression?.textureTransformBinds || []){
+            if(!uvBindings.has(material))uvBindings.set(material,[]);
+            uvBindings.get(material).push({channel,offset});
+        }
+    }
+    const expressions=[];
     const acc = new Set(), views = new Set();
     for (const node of doc.nodes) {
         delete node.weights;
@@ -19,6 +36,13 @@ export function prepareCharacter(doc) {
             return mat?.alphaMode!=='BLEND' || (mat.pbrMetallicRoughness?.baseColorFactor?.[3]??1)>0;
         });
         if(m.primitives.length){
+            const slots=targets.get(i) || new Map();
+            const indices=[...slots.keys()];
+            expressions.push([...slots.values()]);
+            for(const prim of m.primitives){
+                if(indices.length)prim.targets=indices.map(id=>prim.targets[id]);
+                else delete prim.targets;
+            }
             meshIds.set(i,liveMeshes.length);liveMeshes.push(m);
             m.primitives.forEach(p=>materials.add(p.material));
         }
@@ -34,7 +58,7 @@ export function prepareCharacter(doc) {
     for (const mesh of doc.meshes) {
         delete mesh.weights; delete mesh.extras;
         for (const p of mesh.primitives) {
-            delete p.targets;
+            for(const target of p.targets || [])for(const id of Object.values(target))acc.add(id);
             for (const id of Object.values(p.attributes)) acc.add(id);
             if (p.indices !== undefined) acc.add(p.indices);
         }
@@ -43,6 +67,7 @@ export function prepareCharacter(doc) {
     const accessors = [...acc].sort((a,b)=>a-b);
     const remap = new Map(accessors.map((id,i)=>[id,i]));
     for (const mesh of doc.meshes) for (const p of mesh.primitives) {
+        for(const target of p.targets || [])for(const key in target)target[key]=remap.get(target[key]);
         for (const k in p.attributes) p.attributes[k] = remap.get(p.attributes[k]);
         if (p.indices !== undefined) p.indices = remap.get(p.indices);
     }
@@ -91,5 +116,5 @@ export function prepareCharacter(doc) {
     doc.buffers=segments.map(s=>({uri:'bin/'+s.start+'/'+(s.end-s.start),byteLength:s.end-s.start}));
     doc.extensionsUsed=['KHR_materials_unlit']; delete doc.extensionsRequired; delete doc.extensions;
     delete doc.animations;
-    return {doc,names};
+    return {doc,names,expressions,uv:materialIds.map(id=>uvBindings.get(id)||[])};
 }

@@ -26,14 +26,14 @@ jobs:
         working-directory: viewer
         run: npm ci && npm run build
       - name: Compile ARM64 Android application
-        run: bash upstream/gradlew --max-workers=3 :app:assembleDebug
-      - name: Verify package, camera, engine and signature
+        run: bash upstream/gradlew --max-workers=3 :app:assembleRelease
+      - name: Verify unsigned release candidate
         shell: bash
         run: |
           set -eu
-          apk=app/build/outputs/apk/debug/app-debug.apk
+          apk=app/build/outputs/apk/release/app-release-unsigned.apk
           bt="$ANDROID_HOME/build-tools/37.0.0"
-          "$bt/apksigner" verify --verbose "$apk"
+          "$bt/zipalign" -c 4 "$apk"
           "$bt/aapt" dump badging "$apk" > /tmp/package-info
           grep -F "name='dev.littlewhale.ar'" /tmp/package-info
           grep -F 'android.permission.CAMERA' /tmp/package-info
@@ -45,10 +45,10 @@ jobs:
           grep -Fx assets/viewer/index.html /tmp/apk-files
           grep -F lib/arm64-v8a/libglb_renderer.so /tmp/apk-files
           grep -F lib/arm64-v8a/libMenthaAR_Engine.so /tmp/apk-files
-          cp "$apk" Little-Whale-AR-0.2.0-arm64.apk
-          sha256sum Little-Whale-AR-0.2.0-arm64.apk
+          cp "$apk" unsigned-candidate-0.3.0-arm64.apk
+          sha256sum unsigned-candidate-0.3.0-arm64.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Little-Whale-AR-0.2.0-arm64
-          path: Little-Whale-AR-0.2.0-arm64.apk
+          name: unsigned-candidate-0.3.0-arm64
+          path: unsigned-candidate-0.3.0-arm64.apk
           if-no-files-found: error

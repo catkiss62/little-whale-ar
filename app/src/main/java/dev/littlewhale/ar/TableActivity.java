@@ -40,6 +40,10 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     private int goodFrames, lastGoodFrame = -1;
     private final ActivityResultLauncher<String[]> pickModel = registerForActivityResult(
         new ActivityResultContracts.OpenDocument(), uri -> { if(uri!=null) CharacterFile.obtain(this,uri); });
+    private final ActivityResultLauncher<String> saveModel = registerForActivityResult(
+        new ActivityResultContracts.CreateDocument("application/octet-stream"), uri -> {
+            if(uri!=null)CharacterFile.exportOriginal(this,uri);
+        });
     private Button action;
     private DisplayCorrection correction;
     private boolean active, tracked, placed, unavailable, placementFailed;
@@ -90,6 +94,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         camera.init();
         cube = new CubeOverlay(this);
         whale = new CharacterView(this);
+        whale.setFrameLimit(getPreferences(MODE_PRIVATE).getInt("frameLimit",60));
         showWhale = getPreferences(MODE_PRIVATE).getBoolean("character", true);
         FrameLayout.LayoutParams fit = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         preview.addView(camera, fit);
@@ -138,7 +143,20 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         boolean installed=CharacterFile.file(this).isFile();
         AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("桌面角色");
         if(installed){
-            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块"},(d,index)->{
+            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM"},(d,index)->{
+                if(index==2){
+                    new AlertDialog.Builder(this).setTitle("角色渲染帧率上限")
+                        .setSingleChoiceItems(new String[]{"30 FPS","60 FPS"},whale.frameLimit==30?0:1,(choice,which)->{
+                            whale.setFrameLimit(which==0?30:60);
+                            getPreferences(MODE_PRIVATE).edit().putInt("frameLimit",whale.frameLimit).apply();
+                            choice.dismiss();
+                        }).show();
+                    return;
+                }
+                if(index==3){
+                    if(!CharacterFile.exporting)saveModel.launch("SmallBlueFish-V21-AllExpressions-Acceptance.vrm");
+                    return;
+                }
                 switchMode(index==0);
                 if(index==0 && "error".equals(whale.state)) recreate();
             });
@@ -279,7 +297,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             label = "重新扫描"; enabled = true;
             if(otherMap) message="正在另一张地图 · 对准原来的桌面";
             else if(!tracked || recovering) message="正在找回原位 · 对准刚才的桌面";
-            else message=showWhale?"已放置 · 绕到背面，点一下尾巴":"已放置 · 绕桌观察不同颜色的面";
+            else message=showWhale?"已放置 · 点额头、摸摸头，或绕到背后点尾巴":"已放置 · 绕桌观察不同颜色的面";
         } else if (!tracked) {
             message = "对准有纹理的桌面，缓慢左右平移手机";
         } else if (requestTime != 0) {
@@ -289,6 +307,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             message = placementFailed ? "未找到平面 · 再扫一段桌面后重试" : "跟踪就绪 · 让目标桌面占满画面";
         }
         if (active && fps > 0) message += "\n定位 " + fps + " FPS";
+        if (showWhale && whale.renderFps>0) message += " · 角色 " + whale.renderFps + " FPS";
+        if (CharacterFile.exporting) message += "\n正在导出 VRM " + CharacterFile.exportPercent + "%";
         if (!message.contentEquals(status.getText())) status.setText(message);
         if (!label.contentEquals(action.getText())) action.setText(label);
         action.setEnabled(enabled);
