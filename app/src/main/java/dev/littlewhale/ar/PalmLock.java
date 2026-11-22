@@ -39,7 +39,7 @@ final class PalmLock {
         return new Hand(x,y,span,side);
     }
     boolean accept(Hand[] hands,long time){
-        if(samples>0 && time-seen>HOLD_MS)clear();
+        if(!visible && samples>0 && time-seen>1000)clear();
         Hand best=null;double score=Double.POSITIVE_INFINITY;
         for(Hand h:hands){
             if(h==null)continue;

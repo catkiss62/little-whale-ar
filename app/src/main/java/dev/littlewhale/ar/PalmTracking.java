@@ -32,18 +32,27 @@ final class PalmTracking {
     private HandLandmarker detector;
     private volatile boolean closed,failed;
     private boolean busy;
-    private long lastSubmit;
-    private boolean missing;
+    private long lastSubmit,lastGood,missingSince,inferenceGrace;
+    private volatile long lastPreview;
     private final PalmLock lock=new PalmLock();
     private final Runnable expire=this::expire;
-    private void expire(){lock.clear();view.clearPose(false);}
+    private void expire(){
+        if(!lock.visible)return;
+        long deadline=Math.min(lastPreview+PalmLock.HOLD_MS,lastGood+inferenceGrace);
+        if(missingSince>0)deadline=Math.min(deadline,missingSince+PalmLock.HOLD_MS);
+        long remaining=deadline-SystemClock.elapsedRealtime();
+        if(remaining>0){ui.postDelayed(expire,remaining);return;}
+        lock.clear();missingSince=0;view.clearPose(false);
+    }
     private boolean initialized;
 
     PalmTracking(Context context,CharacterView view){this.context=context.getApplicationContext();this.view=view;}
 
     synchronized void offer(Bitmap preview){
         long now=SystemClock.elapsedRealtime();
-        if(closed || failed || busy || now-lastSubmit<65)return;
+        if(closed || failed)return;
+        lastPreview=now;
+        if(busy || now-lastSubmit<65)return;
         float factor=Math.min(1f,512f/Math.max(preview.getWidth(),preview.getHeight()));
         int w=Math.max(1,Math.round(preview.getWidth()*factor)),h=Math.max(1,Math.round(preview.getHeight()*factor));
         if(input==null || input.getWidth()!=w || input.getHeight()!=h){
@@ -78,29 +87,33 @@ final class PalmTracking {
                 String side=result.handedness().get(i).get(0).categoryName();
                 hands[i]=PalmLock.measure(screen,xyz,side,input.getHeight()/(float)input.getWidth());
             }
-            ui.post(()->sample(hands,time));
+            long completed=SystemClock.elapsedRealtime();
+            ui.post(()->sample(hands,time,completed));
         }catch(RuntimeException|LinkageError e){
             failed=true;Log.e("WhalePalm","hand detector failed",e);
-            ui.post(()->{if(!closed){ui.removeCallbacks(expire);expire.run();}});
+            ui.post(()->{if(!closed){ui.removeCallbacks(expire);lock.clear();view.clearPose(false);}});
         }finally{synchronized(this){busy=false;}}
     }
-    private void sample(PalmLock.Hand[] hands,long time){
+    private void sample(PalmLock.Hand[] hands,long time,long completed){
         if(closed || failed)return;
         initialized=true;
-        long age=SystemClock.elapsedRealtime()-time;
-        if(age>500)return;
-        // Inference time is already spent when an observation reaches the display.
-        // Allow a full hold interval for the *next* observation on a busy phone.
-        if(!lock.accept(hands,time)){missing=true;return;}
-        missing=false;
-        view.palmPose(lock.x,lock.y,lock.width);
-        ui.removeCallbacks(expire);ui.postDelayed(expire,PalmLock.HOLD_MS);
+        long now=SystemClock.elapsedRealtime();
+        if(now-completed>250 || now-lastPreview>=PalmLock.HOLD_MS || now-time>1000)return;
+        boolean found=lock.accept(hands,time);
+        if(found){
+            missingSince=0;lastGood=now;
+            // The live preview may deliver many frames while one inference is still running.
+            inferenceGrace=Math.max(580,Math.min(1400,3*(completed-time)+160));
+            view.palmPose(lock.x,lock.y,lock.width);
+        }else if(lock.visible && missingSince==0)missingSince=time;
+        ui.removeCallbacks(expire);
+        if(lock.visible)expire();
     }
     String status(){
         if(failed)return "手掌识别未能启动，请重试";
         if(!initialized)return "正在启动手掌识别…";
         if(!lock.visible)return "摊开一只手，让镜头看清掌心";
-        return missing?"正在找回掌心":"已托住小鲸鱼";
+        return missingSince>0?"正在找回掌心":"已托住小鲸鱼";
     }
     boolean failed(){return failed;}
     synchronized void close(){
