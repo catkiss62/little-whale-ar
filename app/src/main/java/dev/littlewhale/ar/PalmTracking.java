@@ -32,7 +32,8 @@ final class PalmTracking {
     private HandLandmarker detector;
     private volatile boolean closed,failed;
     private boolean busy;
-    private long lastSubmit,lastSeen;
+    private long lastSubmit;
+    private boolean missing;
     private final PalmLock lock=new PalmLock();
     private final Runnable expire=this::expire;
     private void expire(){lock.clear();view.clearPose(false);}
@@ -87,17 +88,19 @@ final class PalmTracking {
         if(closed || failed)return;
         initialized=true;
         long age=SystemClock.elapsedRealtime()-time;
-        if(age>=PalmLock.HOLD_MS)return;
-        if(!lock.accept(hands,time))return;
-        lastSeen=time;
+        if(age>500)return;
+        // Inference time is already spent when an observation reaches the display.
+        // Allow a full hold interval for the *next* observation on a busy phone.
+        if(!lock.accept(hands,time)){missing=true;return;}
+        missing=false;
         view.palmPose(lock.x,lock.y,lock.width);
-        ui.removeCallbacks(expire);ui.postDelayed(expire,PalmLock.HOLD_MS-age);
+        ui.removeCallbacks(expire);ui.postDelayed(expire,PalmLock.HOLD_MS);
     }
     String status(){
         if(failed)return "手掌识别未能启动，请重试";
         if(!initialized)return "正在启动手掌识别…";
         if(!lock.visible)return "摊开一只手，让镜头看清掌心";
-        return SystemClock.elapsedRealtime()-lastSeen>165?"正在找回掌心":"已托住小鲸鱼";
+        return missing?"正在找回掌心":"已托住小鲸鱼";
     }
     boolean failed(){return failed;}
     synchronized void close(){
