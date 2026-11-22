@@ -29,29 +29,35 @@ public final class TouchHost extends Activity {
     }
     boolean editing,checking;
     void traceContour(int[][] vertices){
-        new Thread(()->{
-            int[] origin=new int[2];
-            view.getLocationOnScreen(origin);
-            long start=android.os.SystemClock.uptimeMillis();
-            try{
-                for(int edge=0;edge<vertices.length;edge++){
-                    int[] a=vertices[edge],b=vertices[(edge+1)%vertices.length];
-                    for(int i=0;i<=8;i++){
-                        float t=i/8f;
-                        int action=edge==0 && i==0?android.view.MotionEvent.ACTION_DOWN:
-                            edge==vertices.length-1 && i==8?android.view.MotionEvent.ACTION_UP:android.view.MotionEvent.ACTION_MOVE;
-                        android.view.MotionEvent event=android.view.MotionEvent.obtain(start,android.os.SystemClock.uptimeMillis(),
-                            action,a[0]+(b[0]-a[0])*t-origin[0],a[1]+(b[1]-a[1])*t-origin[1],0);
-                        event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
-                        view.post(()->{view.dispatchTouchEvent(event);event.recycle();});
-                        android.os.SystemClock.sleep(45);
-                    }
-                }
-                view.postDelayed(()->view.evaluateJavascript(
-                    "JSON.stringify([document.getElementById('area-panel').hidden,document.getElementById('area-tip').textContent,window.__samples])",
-                    x->Log.i("WhaleTouchTest","end of stroke "+x)),800);
-            }catch(Exception e){Log.e("WhaleTouchTest","input gesture",e);}
-        }).start();
+        int[] origin=new int[2];
+        view.getLocationOnScreen(origin);
+        sendContourPoint(vertices,origin,0,android.os.SystemClock.uptimeMillis());
+    }
+    void sendContourPoint(int[][] vertices,int[] origin,int index,long start){
+        boolean release=index==vertices.length;
+        int[] vertex=vertices[release?index-1:index];
+        int x=vertex[0]-origin[0],y=vertex[1]-origin[1];
+        int action=index==0?android.view.MotionEvent.ACTION_DOWN:
+            release?android.view.MotionEvent.ACTION_UP:android.view.MotionEvent.ACTION_MOVE;
+        android.view.MotionEvent event=android.view.MotionEvent.obtain(start,android.os.SystemClock.uptimeMillis(),action,x,y,0);
+        event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+        view.dispatchTouchEvent(event);event.recycle();
+        if(release){
+            handler.postDelayed(()->view.evaluateJavascript(
+                "JSON.stringify([document.getElementById('area-tip').textContent,window.__point])",
+                result->Log.i("WhaleTouchTest","end of stroke "+result)),800);
+        }else awaitContourPoint(vertices,origin,index,start,x,y,0);
+    }
+    void awaitContourPoint(int[][] vertices,int[] origin,int index,long start,int x,int y,int attempts){
+        String query="window.__point && Math.hypot(window.__point[0]*"+view.getWidth()+"/innerWidth-("+x+"),"+
+            "window.__point[1]*"+view.getHeight()+"/innerHeight-("+y+"))<5";
+        view.evaluateJavascript(query,result->{
+            if("true".equals(result)){
+                handler.postDelayed(()->sendContourPoint(vertices,origin,index+1,start),90);
+            }else if(attempts<40){
+                handler.postDelayed(()->awaitContourPoint(vertices,origin,index,start,x,y,attempts+1),100);
+            }else Log.e("WhaleTouchTest","missing contour point "+index+" at "+x+","+y);
+        });
     }
     void startBoundary(){
         view.setSize(50);
@@ -68,7 +74,7 @@ public final class TouchHost extends Activity {
                 coords.append(" ").append(vertices[i][0]).append(" ").append(vertices[i][1]);i++;
             }
             editing=true;Log.i("WhaleTouchTest",coords.toString());
-            view.evaluateJavascript("window.__samples=[]; ['pointerdown','pointerup','pointercancel'].forEach(k=>addEventListener(k,e=>window.__samples.push([k,e.clientX,e.clientY,e.target.tagName]),true))",done->traceContour(vertices));
+            view.evaluateJavascript("window.__point=null; ['pointerdown','pointermove','pointerup'].forEach(k=>addEventListener(k,e=>window.__point=[e.clientX,e.clientY],true))",done->traceContour(vertices));
         });
     }
     void tick(){
