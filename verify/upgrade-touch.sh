@@ -24,7 +24,9 @@ seed "$pkg"
 adb install -r Little-Whale-AR-0.9.0-arm64.apk
 adb shell dumpsys package "$pkg" | grep -F 'versionCode=13 '
 adb shell sha256sum "/data/user/0/$pkg/files/SmallBlueFish-V21.vrm" | grep -F cf331c0f5c62f818b05bb7f132bd34424bdd99784bb908d5f4651d901f855514
-bash verify/core-screen.sh
+set +e
+( set -e; bash verify/core-screen.sh ); core_result=$?
+( set -e
 adb shell am force-stop "$pkg"
 adb install /tmp/touch-host.apk
 seed dev.littlewhale.touchtest
@@ -95,6 +97,9 @@ for n in $(seq 1 45); do
 done
 tail -18 /tmp/multi-result
 grep -Fx 'Android two fingers switch plane and height then land' /tmp/multi-result
+)
+touch_result=$?
+( set -e
 adb shell am force-stop dev.littlewhale.touchtest
 adb install /tmp/palm-host.apk
 seed dev.littlewhale.palmtest
@@ -108,3 +113,7 @@ for n in $(seq 1 90); do
 done
 tail -60 /tmp/palm-result
 exit 1
+)
+palm_result=$?
+echo "Native lab result=$core_result touch result=$touch_result palm result=$palm_result"
+exit $(( core_result || touch_result || palm_result ))

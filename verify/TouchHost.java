@@ -95,6 +95,8 @@ public final class TouchHost extends Activity {
         });
     }
     void testPickup(){
+        view.setSize(100);
+        view.evaluateJavascript("document.getElementById('area-clear').click()",null);
         // Wait for the earlier contour pointer-up before starting a new OS gesture.
         view.evaluateJavascript("true",done->{
             handler.postDelayed(()->view.evaluateJavascript(
@@ -103,7 +105,7 @@ public final class TouchHost extends Activity {
                 "new MutationObserver(()=>{console.log('pickup status '+tip.hidden+' '+tip.textContent);if(!tip.hidden&&tip.textContent.includes('绿圈')){visible=true;console.log('valid floor shown')}"+
                 "else if(visible&&tip.hidden){console.log('crown held and released above valid floor');visible=false}})"+
                 ".observe(tip,{attributes:true,childList:true,subtree:true});"+
-                "let start;addEventListener('pointerdown',e=>{start=performance.now();inspect=true;document.getElementById('area-clear').click(); console.log('press '+innerWidth+'x'+innerHeight+' '+e.clientX+' '+e.clientY+' '+e.target.tagName+' '+document.getElementById('area-panel').hidden)},true);"+
+                "let start;addEventListener('pointerdown',e=>{start=performance.now();inspect=true;console.log('press '+innerWidth+'x'+innerHeight+' '+e.clientX+' '+e.clientY+' '+e.target.tagName+' '+document.getElementById('area-panel').hidden)},true);"+
                 "addEventListener('pointerdown',e=>console.log('post hit '+Math.round(performance.now()-start)+' captured '+e.target.hasPointerCapture(e.pointerId)));"+
                 "for(const k of ['pointermove','pointerup','pointercancel'])addEventListener(k,e=>console.log(k+' '+e.clientX+' '+e.clientY),true);return true})()",
                 ready->{
