@@ -84,13 +84,16 @@ public final class TouchHost extends Activity {
     }
     void testPickup(){
         // Wait for the earlier contour pointer-up before starting a new OS gesture.
-        view.evaluateJavascript("document.getElementById('area-cancel').click();true",done->{
+        view.evaluateJavascript("true",done->{
             handler.postDelayed(()->view.evaluateJavascript(
-                "(()=>{const tip=document.getElementById('pickup-tip');let visible=false;"+
-                "new MutationObserver(()=>{if(!tip.hidden&&tip.textContent.includes('绿圈')){visible=true;console.log('valid floor shown')}"+
+                "(()=>{const tip=document.getElementById('pickup-tip');let visible=false,last=0,inspect=false;"+
+                "const original=whale.pose;whale.pose=(...args)=>{const now=performance.now();if(inspect&&now-last>480)console.log('pose gap '+Math.round(now-last));last=now;original(...args)};"+
+                "new MutationObserver(()=>{console.log('pickup status '+tip.hidden+' '+tip.textContent);if(!tip.hidden&&tip.textContent.includes('绿圈')){visible=true;console.log('valid floor shown')}"+
                 "else if(visible&&tip.hidden){console.log('body held, dragged and released on valid floor');visible=false}})"+
                 ".observe(tip,{attributes:true,childList:true,subtree:true});"+
-                "for(const k of ['pointerdown','pointermove','pointerup','pointercancel'])addEventListener(k,e=>console.log(k+' '+e.clientX+' '+e.clientY),true);return true})()",
+                "let start;addEventListener('pointerdown',e=>{start=performance.now();inspect=true;document.getElementById('area-cancel').click(); console.log('press '+innerWidth+'x'+innerHeight+' '+e.clientX+' '+e.clientY+' '+e.target.tagName+' '+document.getElementById('area-panel').hidden)},true);"+
+                "addEventListener('pointerdown',e=>console.log('post hit '+Math.round(performance.now()-start)+' captured '+e.target.hasPointerCapture(e.pointerId)));"+
+                "for(const k of ['pointermove','pointerup','pointercancel'])addEventListener(k,e=>console.log(k+' '+e.clientX+' '+e.clientY),true);return true})()",
                 ready->{
                     int[] pos=new int[2];view.getLocationOnScreen(pos);
                     int x=pos[0]+view.getWidth()/2;

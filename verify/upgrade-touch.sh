@@ -3,8 +3,8 @@ set -euo pipefail
 pkg=dev.littlewhale.ar
 adb root
 adb wait-for-device
-adb shell wm size 600x840
-adb shell wm density 200
+adb shell wm size 480x672
+adb shell wm density 160
 adb install legacy/Little-Whale-AR-0.6.2-arm64.apk
 adb push /tmp/character.vrm /data/local/tmp/whale-test.vrm
 seed(){
@@ -55,7 +55,7 @@ for n in $(seq 1 20); do
   if grep -Fx 'valid floor shown' /tmp/hold-result; then break; fi
   sleep .4
 done
-tail -15 /tmp/hold-result
+tail -28 /tmp/hold-result
 grep -Fx 'valid floor shown' /tmp/hold-result
 adb shell input motionevent MOVE "$gx2" "$gy"
 sleep .6
@@ -65,7 +65,7 @@ for n in $(seq 1 16); do
   if grep -Fx 'body held, dragged and released on valid floor' /tmp/hold-result; then break; fi
   sleep .5
 done
-tail -15 /tmp/hold-result
+tail -28 /tmp/hold-result
 grep -Fx 'body held, dragged and released on valid floor' /tmp/hold-result
 adb shell am force-stop dev.littlewhale.touchtest
 adb install /tmp/palm-host.apk
