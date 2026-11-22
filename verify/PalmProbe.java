@@ -31,7 +31,8 @@ public class PalmProbe extends Activity {
         }catch(ReflectiveOperationException e){throw new AssertionError(e);}
     }
     int phase;
-    long start;
+    long start,lastLog;
+    boolean observing;
     Bitmap load(String name)throws Exception{
         try(InputStream stream=getAssets().open(name)){return BitmapFactory.decodeStream(stream);}
     }
@@ -52,7 +53,16 @@ public class PalmProbe extends Activity {
             if("error".equals(view.state)){Log.e("WhalePalmQA","model failed");return;}
             handler.postDelayed(this::tick,90);return;
         }
+        if(!observing){
+            observing=true;
+            view.evaluateJavascript("window.palmCalls=0;window.hides=0;const p=whale.palmPose,h=whale.hide;whale.palmPose=(...a)=>{p(...a);window.palmCalls++};whale.hide=()=>{h();window.hides++}",null);
+        }
         if(start==0)start=SystemClock.elapsedRealtime();
+        if(SystemClock.elapsedRealtime()-lastLog>1500){
+            lastLog=SystemClock.elapsedRealtime();
+            String line="phase "+phase+" "+tracker.status()+" fps "+view.renderFps;
+            view.evaluateJavascript("[window.palmCalls,window.hides]",res->Log.i("WhalePalmQA",line+" calls/hides "+res));
+        }
         long elapsed=SystemClock.elapsedRealtime()-start;
         boolean visible=tracker.status().equals("已托住小鲸鱼")||tracker.status().equals("正在找回掌心");
         if(tracker.failed()||elapsed>25000){Log.e("WhalePalmQA","phase "+phase+" failed: "+tracker.status());return;}
