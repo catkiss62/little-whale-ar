@@ -148,9 +148,9 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         boolean installed=CharacterFile.file(this).isFile();
         AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("角色与模式");
         if(installed){
-            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%",palmMode?"返回桌面重新放置":"绘制活动范围",palmMode?"掌上模式（当前）":"掌上模式"},(d,index)->{
+            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%",palmMode?"重新选择掌上站位":"绘制活动范围",palmMode?"掌上模式（当前）":"掌上模式"},(d,index)->{
                 if(index==6){setPalmMode(true);return;}
-                if(index==5){if(palmMode){setPalmMode(false);return;}whale.editArea();return;}
+                if(index==5){if(palmMode)whale.choosePalmPoint();else whale.editArea();return;}
                 if(index==4){
                     int[] sizes={25,50,75,100,125,150,200};
                     String[] labels=new String[sizes.length];

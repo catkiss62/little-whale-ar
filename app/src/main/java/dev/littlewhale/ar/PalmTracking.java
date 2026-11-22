@@ -99,12 +99,12 @@ final class PalmTracking {
         initialized=true;
         long now=SystemClock.elapsedRealtime();
         if(now-completed>250 || now-lastPreview>=PalmLock.HOLD_MS || now-time>1000)return;
-        boolean found=lock.accept(hands,time);
+        boolean found=lock.accept(hands,time,view.palmSide);
         if(found){
             missingSince=0;lastGood=now;
             // The live preview may deliver many frames while one inference is still running.
             inferenceGrace=Math.max(580,Math.min(1400,3*(completed-time)+160));
-            view.palmPose(lock.x,lock.y,lock.width);
+            view.palmSurface(lock.outline,lock.width,lock.side);
         }else if(lock.visible && missingSince==0)missingSince=time;
         ui.removeCallbacks(expire);
         if(lock.visible)expire();
@@ -113,7 +113,8 @@ final class PalmTracking {
         if(failed)return "手掌识别未能启动，请重试";
         if(!initialized)return "正在启动手掌识别…";
         if(!lock.visible)return "摊开一只手，让镜头看清掌心";
-        return missingSince>0?"正在找回掌心":"已托住小鲸鱼";
+        if(missingSince>0)return "正在找回掌心";
+        return view.palmSide==null?"点掌面轮廓内，放置小鲸鱼":"已托住小鲸鱼";
     }
     boolean failed(){return failed;}
     synchronized void close(){

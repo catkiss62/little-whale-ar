@@ -4,12 +4,13 @@ package dev.littlewhale.ar;
 final class PalmLock {
     static final long HOLD_MS=335;
     static final class Hand {
-        final float x,y,width;final String side;
-        Hand(float x,float y,float width,String side){this.x=x;this.y=y;this.width=width;this.side=side;}
+        final float x,y,width;final String side;final float[] outline;
+        Hand(float x,float y,float width,String side,float[] outline){this.x=x;this.y=y;this.width=width;this.side=side;this.outline=outline;}
     }
     private long seen;
     private int samples;
-    private String side;
+    String side;
+    final float[] outline=new float[12];
     boolean visible;
     float x,y,width;
     void clear(){visible=false;samples=0;side=null;}
@@ -36,25 +37,38 @@ final class PalmLock {
         if(open<3)return null;
         float x=p[0][0]*.38f,y=p[0][1]*.38f;
         for(int i=5;i<=17;i+=4){x+=p[i][0]*.155f;y+=p[i][1]*.155f;}
-        return new Hand(x,y,span,side);
+        // Six vertices in anatomical order, including the width of the palm heel.
+        float[] outline=new float[12];
+        for(int axis=0;axis<2;axis++){
+            float heel=(p[5][axis]-p[17][axis])*.25f;
+            outline[axis]=p[0][axis]+heel;
+            outline[10+axis]=p[0][axis]-heel;
+            for(int finger=0;finger<4;finger++)outline[2+finger*2+axis]=p[5+finger*4][axis];
+        }
+        return new Hand(x,y,span,side,outline);
     }
-    boolean accept(Hand[] hands,long time){
+    boolean accept(Hand[] hands,long time,String preferred){
         if(!visible && samples>0 && time-seen>1000)clear();
         Hand best=null;double score=Double.POSITIVE_INFINITY;
         for(Hand h:hands){
-            if(h==null)continue;
+            if(h==null || (preferred!=null && !preferred.equals(h.side)))continue;
             double d=Math.hypot(h.x-x,h.y-y);
-            if(samples>0 && (!h.side.equals(side)||d>Math.max(.14,width*1.5)))continue;
+            if(samples>0 && !h.side.equals(side))continue;
             double priority=samples==0?-h.width:d;
             if(priority<score){best=h;score=priority;}
         }
         if(best==null){if(!visible)clear();return false;}
-        if(samples==0){
+        if(samples==0 || score>Math.max(.17,width*1.5)){
+            System.arraycopy(best.outline,0,outline,0,outline.length);
             x=best.x;y=best.y;width=best.width;side=best.side;
         }else{
             double motion=Math.hypot(best.x-x,best.y-y)/Math.max(.05,width);
             double dt=Math.min(.18,(time-seen)/1000d);
-            float alpha=(float)-Math.expm1(-dt*(6+32*Math.min(1,motion*3)));
+            // Rotation can move the selected finger root while the palm center stays still.
+            for(int i=0;i<outline.length;i+=2)
+                motion=Math.max(motion,Math.hypot(best.outline[i]-outline[i],best.outline[i+1]-outline[i+1])/Math.max(.05,width));
+            float alpha=(float)-Math.expm1(-dt*(9+48*Math.min(1,motion*4)));
+            for(int i=0;i<outline.length;i++)outline[i]+=(best.outline[i]-outline[i])*alpha;
             x+=(best.x-x)*alpha;y+=(best.y-y)*alpha;
             width+=(best.width-width)*(float)-Math.expm1(-dt*9);
         }

@@ -18,6 +18,9 @@ final class CharacterView extends WebView {
     private float scale;
     private boolean page, pending, visiblePose, disposed, started;
     boolean beingPetted;
+    String palmSide;
+    private boolean sendingPalm;
+    private String latestPalm;
     int renderFps, frameLimit=60, sizePercent=100;
     String state="starting";
     CharacterView(Context c){
@@ -30,6 +33,9 @@ final class CharacterView extends WebView {
         addJavascriptInterface(new Object(){
             @JavascriptInterface public void petting(boolean on){post(()->beingPetted=on && visiblePose && !disposed);}
             @JavascriptInterface public void reportFps(int value){post(()->{if(visiblePose && !disposed)renderFps=value;});}
+            @JavascriptInterface public void placedOnPalm(String side){post(()->{
+                if(!disposed && visiblePose && ("Right".equals(side)||"Left".equals(side)))palmSide=side;
+            });}
             @JavascriptInterface public void status(String s){post(()->{
                 if(disposed)return;
                 if(s.equals("page")){page=true;state="waiting";setFrameLimit(frameLimit);setSize(sizePercent);startIfAvailable();}
@@ -81,6 +87,8 @@ final class CharacterView extends WebView {
         });
     }
     void clearPose(boolean reset){
+        latestPalm=null;
+        if(reset)palmSide=null;
         if(!visiblePose&&!reset)return;
         visiblePose=false;beingPetted=false;renderFps=0;if(reset)scale=0;
         if(page&&!disposed)evaluateJavascript(reset?"whale.reset()":"whale.hide()",null);
@@ -94,10 +102,20 @@ final class CharacterView extends WebView {
         pending=true;visiblePose=true;
         evaluateJavascript("whale.pose("+Arrays.toString(mv)+","+Arrays.toString(projection)+")", unused->pending=false);
     }
-    void palmPose(float x,float y,float width){
-        if(disposed||pending||!state.equals("ready"))return;
-        pending=true;visiblePose=true;
-        evaluateJavascript("whale.palmPose("+x+","+y+","+width+")",unused->pending=false);
+    void palmSurface(float[] outline,float width,String side){
+        if(disposed || !"ready".equals(state))return;
+        visiblePose=true;
+        latestPalm="whale.palmSurface("+Arrays.toString(outline)+","+width+","+("Left".equals(side)?0:1)+")";
+        sendPalm();
+    }
+    private void sendPalm(){
+        if(sendingPalm || latestPalm==null || disposed)return;
+        String script=latestPalm;latestPalm=null;sendingPalm=true;
+        evaluateJavascript(script,unused->{sendingPalm=false;sendPalm();});
+    }
+    void choosePalmPoint(){
+        palmSide=null;renderFps=0;
+        if(page && !disposed)evaluateJavascript("whale.choosePalmPoint()",null);
     }
     void close(){disposed=true;removeJavascriptInterface("WhaleHost");destroy();}
 }

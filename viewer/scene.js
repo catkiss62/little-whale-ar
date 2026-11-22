@@ -4,6 +4,7 @@ import {prepareCharacter} from './model.js';
 import {Face} from './motion.js';
 import {Attention} from './attention.js';
 import {Roam} from './roam.js';
+import {PalmSurface} from './palm.js';
 import {AreaEditor} from './area.js';
 
 const scene=new THREE.Scene(), camera=new THREE.Camera(), anchor=new THREE.Group(), actor=new THREE.Group();
@@ -13,6 +14,8 @@ let renderer, root, head, neck, upper, tail, ready=false, shown=false, raf=0, ge
 let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
 const attention=new Attention(),roam=new Roam();
 let area;
+const palm=new PalmSurface();
+let settleYaw=0,settleStart=-Infinity;
 const walkBones=[];
 let headYaw=0,headPitch=0,gait=0;
 const joints=[], ray=new THREE.Raycaster(), pointer=new THREE.Vector2(), eye=new THREE.Vector3();
@@ -39,12 +42,18 @@ function draw(now){
     nextFrame=nextFrame && now-nextFrame<step ? nextFrame+step : now+step;
     const dt=lastDraw ? Math.min(.1,(now-lastDraw)/1000) : 0;
     lastDraw=now;
-    let turning=0;
+    let turning=0,lateYaw=0;
     if(turnStart>=0){
         const t=Math.min(1,(now-turnStart)/turnDuration);
         turning=4*t*(1-t);
         actor.rotation.y=baseYaw+(targetYaw-baseYaw)*t*t*(3-2*t);
-        if(t>=1)turnStart=-1;
+        // Leave a few degrees for the head to finish after the shoulders.
+        const finish=Math.max(0,Math.min(1,(t-.55)/.38));
+        lateYaw=clamp((targetYaw-baseYaw)*.13,.15)*finish*finish*(3-2*finish);
+        if(t>=1){turnStart=-1;settleStart=now;settleYaw=lateYaw;}
+    }else{
+        const t=Math.min(1,(now-settleStart)/260);
+        lateYaw=settleYaw*(1-t*t*(3-2*t));
     }
     roam.advance(actor,dt,!!gesture || area.editing || turnStart>=0);
     gait+=(roam.speed-gait)*(1-Math.exp(-dt*10));
@@ -60,14 +69,14 @@ function draw(now){
     let x=clamp(yaw*1.8,.72)*sideWeight;
     let y=clamp(pitch,.5);
     if(gesture?.outsideSince && now-gesture.outsideSince>220)cancelTouch();
-    const followingFinger=gesture?.part==='head';
-    if(followingFinger){
-        // Screen right is character left when facing the camera.
-        x=clamp((gesture.x-gesture.cx)/gesture.rx,.75);
-        y=clamp((gesture.cy-gesture.y)/gesture.ry,.6);
+    let strokeX=0,strokeY=0;
+    if(gesture?.part==='head'){
+        strokeX=clamp((gesture.x-gesture.cx)/gesture.rx,.75);
+        strokeY=clamp((gesture.cy-gesture.y)/gesture.ry,.6);
+        x=clamp(x+strokeX*.23,.75);y=clamp(y+strokeY*.18,.6);
     }
-    const wantedYaw=followingFinger?x*.24:clamp(yaw*(1-.45*turning),.78*(1-.35*turning))*sideWeight;
-    const wantedPitch=followingFinger?y*.15:clamp(pitch,.60);
+    const wantedYaw=clamp(clamp(yaw*(1-.45*turning),.78*(1-.35*turning))*sideWeight+strokeX*.15,.85);
+    const wantedPitch=clamp(clamp(pitch,.60)+strokeY*.10,.66);
     const headBlend=1-Math.exp(-dt*5);
     headYaw+=(wantedYaw-headYaw)*headBlend; headPitch+=(wantedPitch-headPitch)*headBlend;
     const blend=1-Math.exp(-dt*8);
@@ -81,7 +90,7 @@ function draw(now){
     for(const [bone,rest,amount,basis] of joints){
         const share=bone===upper ? .08 : bone===neck ? .34 : .58;
         const pitch=(bone===upper?breath*.018:0)-headPitch*share + (tap*.13+affection*.19)*amount;
-        angles.set(pitch,headYaw*share,affection*(.25+.07*Math.sin(now*.004))*amount,'YXZ');
+        angles.set(pitch,(headYaw+lateYaw)*share,affection*(.25+.07*Math.sin(now*.004))*amount,'YXZ');
         applyRotation(bone,rest,basis,angles);
     }
     const stride=Math.sin(roam.phase);
@@ -110,6 +119,7 @@ function cancelTouch(){
     gesture=null;
 }
 function hide(){
+    palm.lose();settleYaw=0;settleStart=-Infinity;
     if(area?.editing)area.cancel();
     roam.pause();gait=0;headYaw=headPitch=0;
     shown=false; attention.reset(); cancelTouch(); affection=0;tapAt=-Infinity;gazeX=gazeY=0;
@@ -215,6 +225,15 @@ function insideHead(x,y,b,margin=1){
 }
 function beginTouch(e){
     if(area.editing){area.down(e);return;}
+    if(!shown && ready && e.isPrimary && palm.frame){
+        const b=renderer.domElement.getBoundingClientRect();
+        const point=palm.pick((e.clientX-b.left)/b.width,(e.clientY-b.top)/b.height);
+        if(point){
+            showOnPalm(...point);
+            window.WhaleHost?.placedOnPalm?.(palm.site.side===0?'Left':'Right');
+        }
+        return;
+    }
     if(!shown || !ready || gesture || !e.isPrimary)return;
     const bounds=renderer.domElement.getBoundingClientRect();
     pointer.set((e.clientX-bounds.left)/bounds.width*2-1,1-(e.clientY-bounds.top)/bounds.height*2);
@@ -273,7 +292,7 @@ function turnToCamera(duration){
 // The detector and the WebView share the corrected preview rectangle. Project the feet
 // onto the measured palm center and choose apparent height in proportion to palm width.
 const palmCamera=new THREE.PerspectiveCamera(45,1,.02,100);
-function palmPose(x,y,width){
+function showOnPalm(x,y,width){
     if(!ready || !renderer || innerWidth<=0 || innerHeight<=0)return;
     palmCamera.aspect=innerWidth/innerHeight;
     palmCamera.updateProjectionMatrix();
@@ -286,14 +305,20 @@ function palmPose(x,y,width){
     anchor.matrixWorldNeedsUpdate=true;
     shown=true;request();
 }
-function reset(){roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();}
+function palmSurface(points,width,side){
+    if(!ready)return;
+    const point=palm.update(points,width,side);
+    if(point)showOnPalm(...point);
+}
+function choosePalmPoint(){palm.reset();hide();}
+function reset(){palm.reset();roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();}
 function setFrameLimit(value){frameLimit=value===30?30:60;nextFrame=sample=0;}
 function setSize(percent){
     actor.scale.setScalar(Math.max(.25,Math.min(2,percent/100)));
     roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
 }
 function editArea(){if(!shown || !ready)return false;cancelTouch();area.open();return true;}
-window.whale={pose,palmPose,hide,load,reset,setFrameLimit,setSize,editArea};
+window.whale={pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);
