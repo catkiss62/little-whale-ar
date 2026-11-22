@@ -19,7 +19,7 @@ export function contains(poly,p){
     }
     return inside;
 }
-function clearance(poly,p){
+export function clearance(poly,p){
     return Math.min(...poly.map((a,i)=>edgeDistance(p,a,poly[(i+1)%poly.length])));
 }
 export function clearRoute(poly,p,q,margin){

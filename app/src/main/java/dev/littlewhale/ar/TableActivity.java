@@ -99,7 +99,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         whale = new CharacterView(this);
         whale.setFrameLimit(getPreferences(MODE_PRIVATE).getInt("frameLimit",60));
         whale.setSize(getPreferences(MODE_PRIVATE).getInt("sizePercent",100));
-        whale.setPalmLift(getPreferences(MODE_PRIVATE).getInt("palmLift",0));
+        whale.setPalmLift(getPreferences(MODE_PRIVATE).getInt("palmLift",50));
         showWhale = palmMode || getPreferences(MODE_PRIVATE).getBoolean("character", true);
         FrameLayout.LayoutParams fit = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         preview.addView(camera, fit);
@@ -153,8 +153,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             dialog.setItems(palmMode?modes:java.util.Arrays.copyOf(modes,7),(d,index)->{
                 if(index==7){
                     new AlertDialog.Builder(this).setTitle("掌上站位微调")
-                        .setSingleChoiceItems(new String[]{"鞋底对准选点","向屏幕上方移四分之一身","向屏幕上方移半身"},whale.palmLift/25,(choice,which)->{
-                            whale.setPalmLift(which*25);
+                        .setSingleChoiceItems(new String[]{"默认 · 向上移半身","鞋底对准选点"},whale.palmLift==50?0:1,(choice,which)->{
+                            whale.setPalmLift(which==0?50:0);
                             getPreferences(MODE_PRIVATE).edit().putInt("palmLift",whale.palmLift).apply();
                             choice.dismiss();
                         }).show();
@@ -362,7 +362,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             if(otherMap) message="正在另一张地图 · 对准原来的桌面";
             else if(!tracked || recovering) message="正在找回原位 · 对准刚才的桌面";
             else if(showWhale && whale.beingPetted) message="正在摸头";
-            else message=showWhale?"已放置 · 点额头、摸摸头，或绕到背后点尾巴":"已放置 · 绕桌观察不同颜色的面";
+            else message=showWhale?"已放置 · 摸头、点尾巴，长按身体可提起":"已放置 · 绕桌观察不同颜色的面";
         } else if (!tracked) {
             message = "正在定位手机 · 对准桌面纹理，缓慢左右平移";
         } else if (requestTime != 0) {

@@ -5,6 +5,7 @@ import {Face} from './motion.js';
 import {Attention} from './attention.js';
 import {Roam} from './roam.js';
 import {PalmSurface} from './palm.js';
+import {Pickup} from './pickup.js';
 import {AreaEditor} from './area.js';
 
 const scene=new THREE.Scene(), camera=new THREE.Camera(), anchor=new THREE.Group(), actor=new THREE.Group();
@@ -13,7 +14,7 @@ anchor.matrixAutoUpdate=false;camera.matrixAutoUpdate=false;
 let renderer, root, head, neck, upper, tail, ready=false, shown=false, raf=0, generation=0;
 let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
 const attention=new Attention(),roam=new Roam();
-let area;
+let area,pickup,deskPoseTime=-Infinity,carryBlend=0;
 const palm=new PalmSurface();
 let settleYaw=0,settleStart=-Infinity;
 const walkBones=[];
@@ -42,6 +43,15 @@ function draw(now){
     nextFrame=nextFrame && now-nextFrame<step ? nextFrame+step : now+step;
     const dt=lastDraw ? Math.min(.1,(now-lastDraw)/1000) : 0;
     lastDraw=now;
+    if(gesture?.part==='body'){
+        if(now-deskPoseTime>500)cancelTouch();
+        else if(!pickup.source && now-gesture.start>=480){
+            pickup.begin(gesture,now);
+            if(turnStart>=0)turnStart=-1;
+        }
+        if(pickup.source)pickup.move(gesture,now);
+    }
+    carryBlend+=((pickup.source?1:0)-carryBlend)*(1-Math.exp(-dt*11));
     let turning=0,lateYaw=0;
     if(turnStart>=0){
         const t=Math.min(1,(now-turnStart)/turnDuration);
@@ -99,7 +109,9 @@ function draw(now){
         if(kind==='UpperArm')swing*=-.22;
         else if(kind==='LowerLeg')swing=Math.max(0,-swing)*.48;
         else swing*=.40;
-        angles.set(swing*gait,0,0);
+        const hang=kind==='LowerLeg'?.32:kind==='UpperLeg'?-.12:0;
+        const arm=kind==='UpperArm'?side*.12:0;
+        angles.set(swing*gait+hang*carryBlend,0,arm*carryBlend);
         applyRotation(bone,rest,basis,angles);
     }
     renderer.render(scene,camera);
@@ -116,9 +128,10 @@ function applyRotation(bone,rest,basis,angles){
 }
 function cancelTouch(){
     if(gesture?.petting)window.WhaleHost?.petting?.(false);
-    gesture=null;
+    pickup?.end();gesture=null;
 }
 function hide(){
+    deskPoseTime=-Infinity;carryBlend=0;
     palm.lose();settleYaw=0;settleStart=-Infinity;
     if(area?.editing)area.cancel();
     roam.pause();gait=0;headYaw=headPitch=0;
@@ -129,6 +142,9 @@ function hide(){
 }
 function pose(mv,p){
     if(!renderer||!ready)return;
+    const now=performance.now();
+    if(gesture?.part==='body' && now-deskPoseTime>500)cancelTouch();
+    deskPoseTime=now;
     anchor.matrix.fromArray(mv);anchor.matrixWorldNeedsUpdate=true;
     camera.projectionMatrix.fromArray(p);camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
     eye.set(0,0,0).applyMatrix4(inverse.copy(anchor.matrix).invert()).sub(actor.position);
@@ -245,9 +261,13 @@ function beginTouch(e){
     const b=headBounds();
     let obj=hit?.object;
     while(obj && obj!==tail)obj=obj.parent;
-    const part=obj?'tail':insideHead(e.clientX,e.clientY,b) && (hit || b.rx<=18)?'head':null;
+    const part=obj?'tail':insideHead(e.clientX,e.clientY,b) && (hit || b.rx<=18)?'head':hit && !palm.site?'body':null;
     if(!part)return;
     gesture={...b,id:e.pointerId,part,x:e.clientX,y:e.clientY,start:performance.now(),distance:0,outsideSince:0,petting:false};
+    if(part==='body'){
+        gesture.grab=anchor.worldToLocal(hit.point.clone());
+        gesture.downX=e.clientX;gesture.downY=e.clientY;
+    }
     roam.pause(2.5);attention.since=null;
     renderer.domElement.setPointerCapture(e.pointerId);
 }
@@ -255,6 +275,9 @@ function moveTouch(e){
     if(area.editing){area.move(e);return;}
     if(gesture?.id!==e.pointerId)return;
     const g=gesture;
+    if(g.part==='body' && !pickup.source && Math.hypot(e.clientX-g.downX,e.clientY-g.downY)>12){
+        cancelTouch();return;
+    }
     if(g.part==='head'){
         Object.assign(g,headBounds());
         if(!insideHead(e.clientX,e.clientY,g,1.23)){
@@ -276,6 +299,13 @@ function endTouch(e){
     if(gesture?.id!==e.pointerId)return;
     moveTouch(e);
     const g=gesture;
+    if(g?.part==='body'){
+        const now=performance.now();
+        if(pickup.source && now-deskPoseTime<=500){
+            pickup.move(g,now);pickup.end(true);
+        }
+        cancelTouch();request();return;
+    }
     cancelTouch();
     if(!g || g.outsideSince || g.petting || g.distance>Math.max(9,g.rx*.30) || performance.now()-g.start>650)return;
     if(g.part==='head'){tapAt=performance.now();return;}
@@ -295,7 +325,7 @@ const palmCamera=new THREE.PerspectiveCamera(45,1,.02,100);
 const across=new THREE.Vector3(),towardFingers=new THREE.Vector3(),palmUp=new THREE.Vector3();
 const palmRight=new THREE.Vector3(),palmFront=new THREE.Vector3(),contact=new THREE.Vector3();
 const palmBasis=new THREE.Matrix4(),measuredRotation=new THREE.Quaternion(),palmRotation=new THREE.Quaternion();
-let palmPoseTime=0,palmLift=0;
+let palmPoseTime=0,palmLift=.5;
 function showOnPalm(x,y,width,axes){
     if(!ready || !renderer || innerWidth<=0 || innerHeight<=0)return;
     palmCamera.aspect=innerWidth/innerHeight;
@@ -323,6 +353,11 @@ function showOnPalm(x,y,width,axes){
         palm.site.yaw=Math.hypot(eye.x,eye.z)>.32?Math.atan2(eye.x,eye.z):0;
         actor.rotation.y=palm.site.yaw;
     }
+    // Track the camera relative to the physical hand, independent of the display lift.
+    eye.copy(contact).negate().applyQuaternion(measuredRotation.copy(palmRotation).invert());
+    const overhead=Math.hypot(eye.x,eye.z)<.30*eye.length();
+    if(attention.stationaryBehind(now,eye,actor.rotation.y,overhead || !!gesture || turnStart>=0))
+        turnToCamera(1300);
     anchor.matrix.makeRotationFromQuaternion(palmRotation);
     // V21's sole runs from heel to toes in front of the ankle midpoint.
     const sole=headCenter.set(0,0,.035*actor.scale.x).applyQuaternion(actor.quaternion).applyQuaternion(palmRotation);
@@ -346,7 +381,7 @@ function setPalmLift(percent){
     if(point)showOnPalm(...point);
 }
 function choosePalmPoint(){palm.reset();hide();}
-function reset(){palm.reset();roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();}
+function reset(){cancelTouch();palm.reset();roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();}
 function setFrameLimit(value){frameLimit=value===30?30:60;nextFrame=sample=0;}
 function setSize(percent){
     actor.scale.setScalar(Math.max(.25,Math.min(2,percent/100)));
@@ -359,6 +394,7 @@ try{
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);
     document.body.appendChild(renderer.domElement);
     area=new AreaEditor(anchor,camera,actor,roam);
+    pickup=new Pickup(anchor,camera,actor,roam,area);
     const canvas=renderer.domElement;
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
     canvas.addEventListener('pointerdown',beginTouch);

@@ -21,7 +21,7 @@ final class CharacterView extends WebView {
     String palmSide;
     private boolean sendingPalm;
     private String latestPalm;
-    int renderFps, frameLimit=60, sizePercent=100,palmLift=0;
+    int renderFps, frameLimit=60, sizePercent=100,palmLift=50;
     String state="starting";
     CharacterView(Context c){
         super(c);
@@ -82,7 +82,7 @@ final class CharacterView extends WebView {
         if(page && !disposed)evaluateJavascript("whale.setSize("+sizePercent+")",null);
     }
     void setPalmLift(int percent){
-        palmLift=Math.max(0,Math.min(50,percent));
+        palmLift=percent==0?0:50;
         if(page && !disposed)evaluateJavascript("whale.setPalmLift("+palmLift+")",null);
     }
     void editArea(){
