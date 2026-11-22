@@ -31,6 +31,7 @@ final class CharacterView extends WebView {
         getSettings().setAllowFileAccess(false);
         setWebChromeClient(new WebChromeClient());
         addJavascriptInterface(new Object(){
+            @JavascriptInterface public void motionError(){post(()->{if(!disposed)android.widget.Toast.makeText(getContext(),"动作下载未完成，可在角色与模式中导入动作包",android.widget.Toast.LENGTH_LONG).show();});}
             @JavascriptInterface public void petting(boolean on){post(()->beingPetted=on && visiblePose && !disposed);}
             @JavascriptInterface public void reportFps(int value){post(()->{if(visiblePose && !disposed)renderFps=value;});}
             @JavascriptInterface public void placedOnPalm(String side){post(()->{
@@ -54,6 +55,8 @@ final class CharacterView extends WebView {
                             return reply(name.endsWith(".js")?"application/javascript":"text/html",c.getAssets().open("viewer/"+name));
                         if(name.equals("model.json"))return reply("application/json",CharacterFile.range(c,true,0,0));
                     }
+                    if(parts.size()==2 && parts.get(0).equals("motions"))
+                        return reply("application/octet-stream",ReferenceMotions.open(c,parts.get(1)));
                     if(parts.size()==3 && parts.get(0).equals("image"))
                         return reply("image/png",CharacterFile.texture(c,Long.parseLong(parts.get(1)),Long.parseLong(parts.get(2))));
                     if(parts.size()==3 && parts.get(0).equals("bin"))

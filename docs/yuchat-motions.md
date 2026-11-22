@@ -48,3 +48,14 @@
 ```sh
 python3 scripts/collect-yuchat-motions.py Desktop-SmallBlueFish-Quest.apk motions --inventory yuchat-motion-files.tsv
 ```
+
+## 0.8.0 手机端取舍
+
+| 场景 | 采用的做法 |
+| --- | --- |
+| 普通长按提起 | 按 Humanoid 骨名把 grabbed 的旋转轨道转换到 V21 的骨骼静止坐标，保留手指与腿部演出。0.25 秒进入、4.60 秒整段播放、0.20 秒衔接、0.30 秒退出。身体轻扶正，头部按原作压低过仰角。抓点平移由手机控制。 |
+| 桌面自由走 | 选移动库的向前走 locomotion_walk，循环相位随实际步行距离推进，原地转向时停步。保留现有注视。 |
+| 抚摸、弹额头 | 原作按连续接触点计算方向，松手后余势衰减，额头单点有独立回弹。手机用头部触区内相邻触点的位移带动头、颈、胸，叠在当前注视上，保留闭眼和松手过渡。 |
+| 可用于后续互动 | 挥手可用于打招呼，歪头可用于疑惑，指向和弯腰邀请可配合桌面目标；拾取和搬运适合已有可追踪道具及抓点时接入。倒挂扑腾留给明确的抓尾操作。 |
+
+Quest 混合现实有两种桌面来源。环境模式通过 ARPlaneManager 请求水平面，筛选向上、尺寸合适且未标为地板或天花板的平台。手动模式取桌面中心、侧边和深度三点，两条路径都提交同一个支撑面。其手指指向、活动区域、抓取释放各自使用空间数据。手机沿用现有地图位姿，用触屏投影求原桌面等高平面的交点。活动区仅限制自主走路；移到区外会停留，搬回区内可继续走。目前绿圈表示数学平面上的落点，未知桌沿和真实障碍物仍需由用户判断。[环境水平面](https://github.com/CF-612/YuChat/blob/c3e1896c11d6d1fa19bc2ec762d7bd0ce490ae5b/LingChat-XR/Assets/LingChatXR/XR/QuestEnvironmentSurfaces.cs) · [三点标定](https://github.com/CF-612/YuChat/blob/c3e1896c11d6d1fa19bc2ec762d7bd0ce490ae5b/LingChat-XR/Assets/LingChatXR/XR/QuestTablePlacement.cs)

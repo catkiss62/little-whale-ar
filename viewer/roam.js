@@ -68,6 +68,7 @@ export class Roam {
         this.speed=0;
         if(!this.polygon.length || blocked || dt<=0)return;
         const p=actor.position,size=actor.scale.x;
+        if(!contains(this.polygon,p))return;
         this.delay-=dt;
         if(this.delay>0)return;
         if(!this.target){

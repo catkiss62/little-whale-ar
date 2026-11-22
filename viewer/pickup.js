@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {contains,clearance} from './roam.js';
+
 
 // The carried pose is temporary. Only releasing over a verified floor target commits it.
 export class Pickup {
@@ -15,28 +15,25 @@ export class Pickup {
     }
     begin(g,now){
         this.source=this.actor.position.clone();
-        this.depth=g.grab.clone().applyMatrix4(this.anchor.matrixWorld).project(this.camera).z;
-        this.gripOffset=g.grab.clone().sub(this.source);
+        const feet=this.point.copy(this.source).applyMatrix4(this.anchor.matrixWorld).project(this.camera);
+        this.offsetX=(1+feet.x)*innerWidth/2-g.x;
+        this.offsetY=(1-feet.y)*innerHeight/2-g.y;
         this.since=now;this.tip.hidden=false;
     }
     move(g,now){
         if(!this.source)return;
-        const {actor,anchor,camera,marker}=this,size=actor.scale.x;
-        const rise=.23*size*Math.min(1,(now-this.since)/160);
-        this.point.set(2*g.x/innerWidth-1,1-2*g.y/innerHeight,this.depth).unproject(camera);
-        anchor.worldToLocal(this.point);
-        actor.position.copy(this.point).sub(this.gripOffset);
-        actor.position.y=Math.max(0,actor.position.y)+rise;
-        // Validate the floor directly below the suspended feet along the table normal.
-        this.point.set(actor.position.x,0,actor.position.z).applyMatrix4(anchor.matrixWorld).project(camera);
-        const onScreen=Math.abs(this.point.x)<=1 && Math.abs(this.point.y)<=1 && Math.abs(this.point.z)<1 &&
-            g.x>=0 && g.x<=innerWidth && g.y>=0 && g.y<=innerHeight;
-        const floor=onScreen?this.area.project((1+this.point.x)*innerWidth/2,(1-this.point.y)*innerHeight/2):null;
-        const poly=this.roam.polygon;
-        this.target=floor && contains(poly,floor) && clearance(poly,floor)>=.11*size ? floor:null;
+        const {actor,marker}=this,size=actor.scale.x;
+        const x=g.x+this.offsetX,y=g.y+this.offsetY;
+        const visible=g.x>=0 && g.x<=innerWidth && g.y>=0 && g.y<=innerHeight &&
+            x>=0 && x<=innerWidth && y>=0 && y<=innerHeight;
+        this.target=visible?this.area.project(x,y):null;
         marker.visible=!!this.target;
-        if(this.target){marker.position.set(floor.x,.006*size,floor.z);marker.scale.setScalar(size);}
-        const message=this.target?'松手放在绿圈处':poly.length?'移到活动区内，松手可放下':'先画活动范围才能换位置，松手回原位';
+        if(this.target){
+            const {x,z}=this.target;
+            actor.position.set(x,.23*size*Math.min(1,(now-this.since)/160),z);
+            marker.position.set(x,.006*size,z);marker.scale.setScalar(size);
+        }
+        const message=this.target?'松手放在绿圈处':'请对准原桌面高度，出现绿圈后松手';
         if(this.tip.textContent!==message)this.tip.textContent=message;
     }
     end(commit=false){

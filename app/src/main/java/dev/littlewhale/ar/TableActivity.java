@@ -46,6 +46,17 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         new ActivityResultContracts.CreateDocument("application/octet-stream"), uri -> {
             if(uri!=null)CharacterFile.exportOriginal(this,uri);
         });
+    private final ActivityResultLauncher<String[]> pickMotions = registerForActivityResult(
+        new ActivityResultContracts.OpenDocument(), uri -> {
+            if(uri==null)return;
+            new Thread(()->{
+                try{
+                    ReferenceMotions.importFile(getApplicationContext(),uri);
+                    runOnUiThread(()->{if(!isDestroyed()){whale.evaluateJavascript("window.whale?.loadMotions()",null);motionToast("提起和走路动作已导入");}});
+                }catch(Exception e){runOnUiThread(()->motionToast("动作导入失败 · "+e.getMessage()));}
+            },"import-vr-motions").start();
+        });
+    private void motionToast(String message){android.widget.Toast.makeText(this,message,android.widget.Toast.LENGTH_LONG).show();}
     private Button action;
     private DisplayCorrection correction;
     private boolean active, tracked, placed, unavailable, placementFailed;
@@ -150,7 +161,11 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("角色与模式");
         if(installed){
             String[] modes={"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%",palmMode?"重新选择掌上站位":"绘制活动范围",palmMode?"掌上模式（当前）":"掌上模式","掌上站位微调 · "+whale.palmLift+"%"};
-            dialog.setItems(palmMode?modes:java.util.Arrays.copyOf(modes,7),(d,index)->{
+            int motionIndex=palmMode?8:7;
+            modes=java.util.Arrays.copyOf(modes,motionIndex+1);
+            modes[motionIndex]="导入提起和走路动作";
+            dialog.setItems(modes,(d,index)->{
+                if(index==motionIndex){pickMotions.launch(new String[]{"*/*"});return;}
                 if(index==7){
                     new AlertDialog.Builder(this).setTitle("掌上站位微调")
                         .setSingleChoiceItems(new String[]{"默认 · 向上移半身","鞋底对准选点"},whale.palmLift==50?0:1,(choice,which)->{

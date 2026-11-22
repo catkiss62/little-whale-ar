@@ -5,6 +5,7 @@ import {Face} from './motion.js';
 import {Attention} from './attention.js';
 import {Roam} from './roam.js';
 import {PalmSurface} from './palm.js';
+import {ReferenceMotion} from './reference-motion.js';
 import {Pickup} from './pickup.js';
 import {AreaEditor} from './area.js';
 
@@ -14,7 +15,8 @@ anchor.matrixAutoUpdate=false;camera.matrixAutoUpdate=false;
 let renderer, root, head, neck, upper, tail, ready=false, shown=false, raf=0, generation=0;
 let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
 const attention=new Attention(),roam=new Roam();
-let area,pickup,deskPoseTime=-Infinity,carryBlend=0;
+let area,pickup,motions,deskPoseTime=-Infinity;
+let swayX=0,swayY=0,lidsUntil=-Infinity;
 const palm=new PalmSurface();
 let settleYaw=0,settleStart=-Infinity;
 const walkBones=[];
@@ -51,7 +53,7 @@ function draw(now){
         }
         if(pickup.source)pickup.move(gesture,now);
     }
-    carryBlend+=((pickup.source?1:0)-carryBlend)*(1-Math.exp(-dt*11));
+    motions?.restore();
     let turning=0,lateYaw=0;
     if(turnStart>=0){
         const t=Math.min(1,(now-turnStart)/turnDuration);
@@ -95,12 +97,18 @@ function draw(now){
     if(now>blinkAt+200)blinkAt=now+2200+Math.random()*2800;
     const blink=Math.max(0,1-Math.abs(now-blinkAt-90)/90);
     const tap=Math.max(0,1-(now-tapAt)/650);
-    face.apply(Math.max(blink,tap*.75,affection*.74),affection,gazeX,gazeY);
+    const eyelids=now<lidsUntil?Math.min(1,(lidsUntil-now)/280):0;
+    face.apply(Math.max(blink,tap*.75,affection*.74,eyelids*.55),affection,gazeX,gazeY);
+    const recoilAge=(now-tapAt)/420;
+    const recoil=recoilAge<1?Math.sin(Math.PI*recoilAge)*Math.exp(-2.1*recoilAge):0;
+    const trail=Math.exp(-dt/.13);swayX*=trail;swayY*=trail;
     const breath=Math.sin(now*.0017);
     for(const [bone,rest,amount,basis] of joints){
         const share=bone===upper ? .08 : bone===neck ? .34 : .58;
-        const pitch=(bone===upper?breath*.018:0)-headPitch*share + (tap*.13+affection*.19)*amount;
-        angles.set(pitch,(headYaw+lateYaw)*share,affection*(.25+.07*Math.sin(now*.004))*amount,'YXZ');
+        const touchShare=bone===upper?.15:bone===neck?.20:.65;
+        const pitch=(bone===upper?breath*.018:0)-headPitch*share + affection*.09*amount
+            + swayY*touchShare - recoil*(bone===upper?.26:bone===head?.14:0);
+        angles.set(pitch,(headYaw+lateYaw)*share,-swayX*touchShare,'YXZ');
         applyRotation(bone,rest,basis,angles);
     }
     const stride=Math.sin(roam.phase);
@@ -109,11 +117,10 @@ function draw(now){
         if(kind==='UpperArm')swing*=-.22;
         else if(kind==='LowerLeg')swing=Math.max(0,-swing)*.48;
         else swing*=.40;
-        const hang=kind==='LowerLeg'?.32:kind==='UpperLeg'?-.12:0;
-        const arm=kind==='UpperArm'?side*.12:0;
-        angles.set(swing*gait+hang*carryBlend,0,arm*carryBlend);
+        angles.set(motions?.locomotion_walk?0:swing*gait,0,0);
         applyRotation(bone,rest,basis,angles);
     }
+    motions?.update(actor,now,!!pickup.source,roam.phase,gait);
     renderer.render(scene,camera);
     if(!sample){sample=now;count=0;}
     else if(++count && now-sample>=1000){
@@ -131,7 +138,7 @@ function cancelTouch(){
     pickup?.end();gesture=null;
 }
 function hide(){
-    deskPoseTime=-Infinity;carryBlend=0;
+    deskPoseTime=-Infinity;motions?.reset();swayX=swayY=0;lidsUntil=-Infinity;
     palm.lose();settleYaw=0;settleStart=-Infinity;
     if(area?.editing)area.cancel();
     roam.pause();gait=0;headYaw=headPitch=0;
@@ -163,6 +170,7 @@ function pose(mv,p){
 }
 function disposeModel(){
     ready=false;hide();walkBones.length=0;joints.length=0;turnStart=-1;actor.rotation.y=0;
+    motions=null;
     if(!root)return;
     const textures=new Set();
     root.traverse(o=>{
@@ -213,6 +221,7 @@ async function load(){
         if(!(height>0&&Number.isFinite(height)))throw Error('模型范围无效');
         const feet=[names.leftFoot,names.rightFoot].map(n=>root.getObjectByName(n)?.getWorldPosition(new THREE.Vector3())).filter(Boolean);
         const center=feet.length===2?feet[0].add(feet[1]).multiplyScalar(.5):box.getCenter(new THREE.Vector3());
+        motions=new ReferenceMotion(root,names);
         relaxArms(root,names);
         root.scale.multiplyScalar(1/height);
         root.position.add(new THREE.Vector3(-center.x,-box.min.y,-center.z).multiplyScalar(1/height));
@@ -226,8 +235,16 @@ async function load(){
             const b=root.getObjectByName(names[side+kind]);
             if(b)walkBones.push([b,b.quaternion.clone(),basis(b),sign,kind]);
         }
-        ready=true;feedback('ready');request();
+        ready=true;feedback('ready');request();loadMotions();
     }catch(e){if(token!==generation)return;disposeModel();feedback('error');console.error(e);}
+}
+async function loadMotions(){
+    const current=motions;
+    if(!current)return;
+    try{await current.load();}
+    catch(e){
+        if(motions===current)window.WhaleHost?.motionError?.();
+    }
 }
 function headBounds(){
     // Use the projected crown and temples. Screen-space width stays usable from above.
@@ -292,6 +309,14 @@ function moveTouch(e){
         }
         if(g.outsideSince){g.x=e.clientX;g.y=e.clientY;g.outsideSince=0;}
     }
+    if(g.part==='head'){
+        const time=performance.now();
+        if(time-(g.sampleTime??g.start)<150){
+            swayX=clamp(swayX+(e.clientX-g.x)/Math.max(8,g.rx)*.27,.16);
+            swayY=clamp(swayY+(e.clientY-g.y)/Math.max(8,g.ry)*.22,.13);
+        }
+        g.sampleTime=time;
+    }
     g.distance+=Math.hypot(e.clientX-g.x,e.clientY-g.y);
     g.x=e.clientX;g.y=e.clientY;
     if(g.part==='head' && !g.petting && g.distance>=Math.max(4,Math.min(12,g.rx*.16))){
@@ -312,6 +337,7 @@ function endTouch(e){
         else cancelTouch();
         request();return;
     }
+    if(g?.petting)lidsUntil=performance.now()+450;
     cancelTouch();
     if(!g || g.outsideSince || g.petting || g.distance>Math.max(9,g.rx*.30) || performance.now()-g.start>650)return;
     if(g.part==='head'){tapAt=performance.now();return;}
@@ -394,7 +420,7 @@ function setSize(percent){
     roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
 }
 function editArea(){if(!shown || !ready)return false;cancelTouch();area.open();return true;}
-window.whale={pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,setPalmLift,editArea};
+window.whale={loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,setPalmLift,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);
