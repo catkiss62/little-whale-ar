@@ -30,7 +30,8 @@ public final class TouchHost extends Activity {
     boolean editing,checking;
     void traceContour(int[][] vertices){
         new Thread(()->{
-            android.app.Instrumentation input=new android.app.Instrumentation();
+            int[] origin=new int[2];
+            view.getLocationOnScreen(origin);
             long start=android.os.SystemClock.uptimeMillis();
             try{
                 for(int edge=0;edge<vertices.length;edge++){
@@ -40,9 +41,9 @@ public final class TouchHost extends Activity {
                         int action=edge==0 && i==0?android.view.MotionEvent.ACTION_DOWN:
                             edge==vertices.length-1 && i==8?android.view.MotionEvent.ACTION_UP:android.view.MotionEvent.ACTION_MOVE;
                         android.view.MotionEvent event=android.view.MotionEvent.obtain(start,android.os.SystemClock.uptimeMillis(),
-                            action,a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,0);
+                            action,a[0]+(b[0]-a[0])*t-origin[0],a[1]+(b[1]-a[1])*t-origin[1],0);
                         event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
-                        input.sendPointerSync(event);event.recycle();
+                        view.post(()->{view.dispatchTouchEvent(event);event.recycle();});
                         android.os.SystemClock.sleep(45);
                     }
                 }
