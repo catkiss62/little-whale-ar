@@ -1,0 +1,15 @@
+plugins {
+    id 'com.android.application' version '9.5.1' apply false
+    id 'com.android.library' version '9.5.1' apply false
+}
+// Keep the dependency's native compilation scoped to the test phone's ABI.
+project(':MenthaAR') {
+    plugins.withId('com.android.library') {
+        androidComponents.finalizeDsl { dsl ->
+            dsl.defaultConfig.ndk.abiFilters.clear()
+            dsl.defaultConfig.ndk.abiFilters.add('arm64-v8a')
+            dsl.defaultConfig.externalNativeBuild.cmake.abiFilters.clear()
+            dsl.defaultConfig.externalNativeBuild.cmake.abiFilters.add('arm64-v8a')
+        }
+    }
+}
