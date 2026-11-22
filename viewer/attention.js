@@ -1,22 +1,11 @@
 // Camera positions use anchor space, where one unit is the standing character height.
 export class Attention {
-    constructor(random=Math.random){
-        this.random=random;
+    constructor(){
         this.reset();
     }
     reset(){
         this.since=null;
         this.lastPose=null;
-        this.nextLook=0;
-        this.lookAtCamera=false;
-        this.idleX=this.idleY=0;
-    }
-    look(now){
-        if(now<this.nextLook)return;
-        this.lookAtCamera=!this.lookAtCamera;
-        this.idleX=(this.random()-.5)*.58;
-        this.idleY=(this.random()-.5)*.28;
-        this.nextLook=now+(this.lookAtCamera?650+this.random()*950:2300+this.random()*3200);
     }
     stationaryBehind(now,eye,yaw,blocked){
         const gap=this.lastPose===null || now-this.lastPose>350;

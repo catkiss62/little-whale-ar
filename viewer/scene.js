@@ -51,22 +51,23 @@ function draw(now){
     actor.updateWorldMatrix(true,false);
     head.getWorldPosition(headPoint);
     const direction=actor.worldToLocal(focus.set(0,0,0)).sub(actor.worldToLocal(headPoint));
-    const front=direction.z>0;
-    let x=front?clamp(Math.atan2(direction.x,direction.z)*1.8,.72):0;
-    let y=front?clamp(Math.atan2(direction.y,Math.hypot(direction.x,direction.z)),.5):0;
+    const horizontal=Math.hypot(direction.x,direction.z);
     const yaw=Math.atan2(direction.x,direction.z);
-    const pitch=Math.atan2(direction.y,Math.hypot(direction.x,direction.z));
-    attention.look(now);
-    if(!front || !attention.lookAtCamera){x=attention.idleX;y=attention.idleY;}
+    const pitch=Math.atan2(direction.y,horizontal);
+    // Ease sideways gaze back to center directly behind or overhead.
+    const sideWeight=Math.min(1,(Math.PI-Math.abs(yaw))/(Math.PI/2)) *
+        Math.min(1,4*horizontal/Math.max(direction.length(),1e-6));
+    let x=clamp(yaw*1.8,.72)*sideWeight;
+    let y=clamp(pitch,.5);
     if(gesture?.outsideSince && now-gesture.outsideSince>220)cancelTouch();
-    if(gesture?.part==='head'){
+    const followingFinger=gesture?.part==='head';
+    if(followingFinger){
         // Screen right is character left when facing the camera.
         x=clamp((gesture.x-gesture.cx)/gesture.rx,.75);
         y=clamp((gesture.cy-gesture.y)/gesture.ry,.6);
     }
-    const cameraLook=attention.lookAtCamera && front && !gesture;
-    const wantedYaw=cameraLook?clamp(yaw,.78):x*.24;
-    const wantedPitch=cameraLook?clamp(pitch,.60):y*.15;
+    const wantedYaw=followingFinger?x*.24:clamp(yaw,.78)*sideWeight;
+    const wantedPitch=followingFinger?y*.15:clamp(pitch,.60);
     const headBlend=1-Math.exp(-dt*5);
     headYaw+=(wantedYaw-headYaw)*headBlend; headPitch+=(wantedPitch-headPitch)*headBlend;
     const blend=1-Math.exp(-dt*8);
