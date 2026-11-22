@@ -28,7 +28,8 @@ PY
 }
 click_text '定位对照'
 click_text 'ARCore ·'
-for i in {1..12}; do
+check_state(){
+for i in {1..6}; do
   sleep 1
   adb shell uiautomator dump /sdcard/window.xml >/dev/null || true
   adb pull /sdcard/window.xml /tmp/ar-core.xml >/dev/null 2>&1 || true
@@ -36,16 +37,26 @@ for i in {1..12}; do
 import xml.etree.ElementTree as E
 try: labels=[n.get('text','') for n in E.parse('/tmp/ar-core.xml').iter('node')]
 except Exception:exit(1)
-expected=('ARCore 已启动','定位正常','ARCore 定位中','本机报告不支持 ARCore','ARCore 能力暂未确定')
+expected=('ARCore 已启动','定位正常','ARCore 定位中')
 found=[s for s in labels if s.startswith(expected)]
 if not found:exit(1)
 print('Native ARCore comparison screen:',found)
 PY
-  then adb shell input keyevent 4; exit 0; fi
+  then return 0; fi
 done
 python3 - <<'PY'
 import xml.etree.ElementTree as E
 print([n.get('text','') for n in E.parse('/tmp/ar-core.xml').iter('node') if n.get('text')])
 PY
-adb logcat -d -s AndroidRuntime:E | tail -28
-exit 1
+adb logcat -d | grep -Ei 'arcore.*error|AR_ERROR|native.*bridge|FATAL EXCEPTION|Failure loading' | tail -10 | cut -c1-280 || true
+return 1
+}
+if check_state; then adb shell input keyevent 4; exit 0; fi
+adb shell am force-stop "$pkg"
+echo 'Signed ARM launcher opened the native lab. Trying the SDK x86_64 build in the virtual camera.'
+bash verify/build-core-host.sh
+adb install /tmp/core-host.apk
+adb shell pm grant dev.littlewhale.coretest android.permission.CAMERA
+adb shell am start -W -n dev.littlewhale.coretest/dev.littlewhale.ar.CoreLabActivity
+check_state
+adb shell am force-stop dev.littlewhale.coretest
