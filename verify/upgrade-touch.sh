@@ -24,6 +24,8 @@ seed "$pkg"
 adb install -r Little-Whale-AR-0.9.0-arm64.apk
 adb shell dumpsys package "$pkg" | grep -F 'versionCode=13 '
 adb shell sha256sum "/data/user/0/$pkg/files/SmallBlueFish-V21.vrm" | grep -F cf331c0f5c62f818b05bb7f132bd34424bdd99784bb908d5f4651d901f855514
+bash verify/core-screen.sh
+adb shell am force-stop "$pkg"
 adb install /tmp/touch-host.apk
 seed dev.littlewhale.touchtest
 adb push /tmp/test-motions.zip /data/local/tmp/test-motions.zip
@@ -39,8 +41,16 @@ for i in $(seq 1 80); do
 done
 if [[ -z "$coords" ]]; then adb logcat -d -s chromium:E AndroidRuntime:E WhaleTouchTest:E | tail -50; exit 1; fi
 read -r x1 y1 x2 y2 <<<"$coords"
-adb shell input swipe "$x1" "$y1" "$x2" "$y2" 1450
-sleep 2
+# Begin on the face, move immediately, then keep stroking so Android WebView
+# can dispatch the move and report the ongoing pet before release.
+cx=$(( (x1+x2)/2 ))
+for pct in 36 32 28 24 40; do
+  py=$(( y1*pct/22 ))
+  adb shell "input motionevent DOWN $cx $py; input motionevent MOVE $((cx+18)) $py; sleep .35; input motionevent MOVE $((cx-15)) $py; sleep .4; input motionevent MOVE $((cx+12)) $py; sleep .65; input motionevent UP $((cx+12)) $py"
+  sleep 1
+  adb logcat -d -s WhaleTouchTest:I -v raw > /tmp/whale-touch.log
+  if grep -Fx 'pet released' /tmp/whale-touch.log; then break; fi
+done
 adb logcat -d -s WhaleTouchTest:I -v raw | tee /tmp/whale-touch.log
 grep -Fx 'offline VRMA import verified' /tmp/whale-touch.log
 grep -Fx 'pet entered' /tmp/whale-touch.log
@@ -92,7 +102,7 @@ adb logcat -c
 adb shell am start -n dev.littlewhale.palmtest/dev.littlewhale.ar.PalmProbe
 for n in $(seq 1 90); do
   adb logcat -d -s WhalePalmQA:I WhalePalm:E AndroidRuntime:E -v raw > /tmp/palm-result
-  if grep -Fx 'stopped feed hidden' /tmp/palm-result; then cat /tmp/palm-result; adb shell am force-stop dev.littlewhale.palmtest; bash verify/core-screen.sh; exit 0; fi
+  if grep -Fx 'stopped feed hidden' /tmp/palm-result; then cat /tmp/palm-result; adb shell am force-stop dev.littlewhale.palmtest; exit 0; fi
   if grep -E 'phase [0-9]+ failed|FATAL EXCEPTION|model failed|accepted closed fist' /tmp/palm-result; then break; fi
   sleep 2
 done
