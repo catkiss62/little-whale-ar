@@ -48,15 +48,16 @@ python3 - <<'PY'
 import xml.etree.ElementTree as E
 print([n.get('text','') for n in E.parse('/tmp/ar-core.xml').iter('node') if n.get('text')])
 PY
-adb logcat -d | grep -Ei 'arcore.*error|AR_ERROR|native.*bridge|FATAL EXCEPTION|Failure loading' | tail -10 | cut -c1-280 || true
+adb logcat -d | grep -Ei -A5 'Error while checking app details|LoadSymbolsDynamite|AR_ERROR|FATAL EXCEPTION|Failure loading' | tail -22 | cut -c1-280 || true
 return 1
 }
 if check_state; then adb shell input keyevent 4; exit 0; fi
 adb shell am force-stop "$pkg"
 echo 'Signed ARM launcher opened the native lab. Trying the SDK x86_64 build in the virtual camera.'
 bash verify/build-core-host.sh
+adb uninstall "$pkg"
 adb install /tmp/core-host.apk
-adb shell pm grant dev.littlewhale.coretest android.permission.CAMERA
-adb shell am start -W -n dev.littlewhale.coretest/dev.littlewhale.ar.CoreLabActivity
+adb shell pm grant dev.littlewhale.ar android.permission.CAMERA
+adb shell am start -W -n dev.littlewhale.ar/dev.littlewhale.ar.CoreLabActivity
 check_state
-adb shell am force-stop dev.littlewhale.coretest
+adb shell am force-stop dev.littlewhale.ar
