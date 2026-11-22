@@ -99,6 +99,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         whale = new CharacterView(this);
         whale.setFrameLimit(getPreferences(MODE_PRIVATE).getInt("frameLimit",60));
         whale.setSize(getPreferences(MODE_PRIVATE).getInt("sizePercent",100));
+        whale.setPalmLift(getPreferences(MODE_PRIVATE).getInt("palmLift",0));
         showWhale = palmMode || getPreferences(MODE_PRIVATE).getBoolean("character", true);
         FrameLayout.LayoutParams fit = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         preview.addView(camera, fit);
@@ -148,7 +149,17 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         boolean installed=CharacterFile.file(this).isFile();
         AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("角色与模式");
         if(installed){
-            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%",palmMode?"重新选择掌上站位":"绘制活动范围",palmMode?"掌上模式（当前）":"掌上模式"},(d,index)->{
+            String[] modes={"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%",palmMode?"重新选择掌上站位":"绘制活动范围",palmMode?"掌上模式（当前）":"掌上模式","掌上站位微调 · "+whale.palmLift+"%"};
+            dialog.setItems(palmMode?modes:java.util.Arrays.copyOf(modes,7),(d,index)->{
+                if(index==7){
+                    new AlertDialog.Builder(this).setTitle("掌上站位微调")
+                        .setSingleChoiceItems(new String[]{"鞋底对准选点","向屏幕上方移四分之一身","向屏幕上方移半身"},whale.palmLift/25,(choice,which)->{
+                            whale.setPalmLift(which*25);
+                            getPreferences(MODE_PRIVATE).edit().putInt("palmLift",whale.palmLift).apply();
+                            choice.dismiss();
+                        }).show();
+                    return;
+                }
                 if(index==6){setPalmMode(true);return;}
                 if(index==5){if(palmMode)whale.choosePalmPoint();else whale.editArea();return;}
                 if(index==4){

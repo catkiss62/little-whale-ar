@@ -4,13 +4,13 @@ package dev.littlewhale.ar;
 final class PalmLock {
     static final long HOLD_MS=335;
     static final class Hand {
-        final float x,y,width;final String side;final float[] outline;
-        Hand(float x,float y,float width,String side,float[] outline){this.x=x;this.y=y;this.width=width;this.side=side;this.outline=outline;}
+        final float x,y,width;final String side;final float[] outline,axes;
+        Hand(float x,float y,float width,String side,float[] outline,float[] axes){this.axes=axes;this.x=x;this.y=y;this.width=width;this.side=side;this.outline=outline;}
     }
     private long seen;
     private int samples;
     String side;
-    final float[] outline=new float[12];
+    final float[] axes=new float[6],outline=new float[12];
     boolean visible;
     float x,y,width;
     void clear(){visible=false;samples=0;side=null;}
@@ -45,7 +45,27 @@ final class PalmLock {
             outline[10+axis]=p[0][axis]-heel;
             for(int finger=0;finger<4;finger++)outline[2+finger*2+axis]=p[5+finger*4][axis];
         }
-        return new Hand(x,y,span,side,outline);
+        // Fit image-plane metres to the upright preview with the wrist and four knuckles.
+        // Use observed X/Y for alignment and the metric model for the out-of-plane component.
+        double image2=0,metric2=0;
+        for(int i=5;i<=17;i+=4){
+            double dx=p[i][0]-p[0][0],dy=(p[i][1]-p[0][1])*aspect;
+            double mx=world[i][0]-world[0][0],my=world[i][1]-world[0][1];
+            image2+=dx*dx+dy*dy;metric2+=mx*mx+my*my;
+        }
+        if(!(metric2>1e-7 && image2>1e-7))return null;
+        float scale=(float)Math.sqrt(image2/metric2);
+        float[] axes={ax-bx,by-ay,-scale*(world[5][2]-world[17][2]),0,0,0};
+        for(int i=5;i<=17;i+=4){
+            axes[3]+=(p[i][0]-p[0][0])*.25f;
+            axes[4]-=(p[i][1]-p[0][1])*aspect*.25f;
+            axes[5]-=(world[i][2]-world[0][2])*scale*.25f;
+        }
+        float broad=(float)Math.hypot(breadth,axes[2]);
+        float reach=(float)Math.hypot(length,scale*(world[9][2]-world[0][2]));
+        float fullSpan=Math.max(broad,reach*.78f);
+        if(!Float.isFinite(fullSpan) || !Float.isFinite(axes[5]))return null;
+        return new Hand(x,y,fullSpan,side,outline,axes);
     }
     boolean accept(Hand[] hands,long time,String preferred){
         if(!visible && samples>0 && time-seen>1000)clear();
@@ -72,6 +92,7 @@ final class PalmLock {
             x+=(best.x-x)*alpha;y+=(best.y-y)*alpha;
             width+=(best.width-width)*(float)-Math.expm1(-dt*9);
         }
+        System.arraycopy(best.axes,0,axes,0,axes.length);
         seen=time;samples=Math.min(2,samples+1);
         visible=samples>=2;
         return visible;

@@ -12,11 +12,11 @@ export class PalmSurface {
     reset(){
         this.site=null;this.lose();
     }
-    update(points,width,side){
+    update(points,width,side,axes){
         if(this.site && side!==this.site.side){this.lose();return null;}
         let cx=0,cy=0;
         for(let i=0;i<points.length;i+=2){cx+=points[i]/6;cy+=points[i+1]/6;}
-        this.frame={points,cx,cy,width,side,time:performance.now()};
+        this.frame={points,cx,cy,width,side,axes,time:performance.now()};
         this.guide.hidden=!!this.site;
         if(!this.site){
             const vertices=[];
@@ -43,7 +43,7 @@ export class PalmSurface {
     }
     foot(){
         if(!this.site || !this.frame)return null;
-        const {points,cx,cy,width}=this.frame,{i,j,u,v}=this.site;
-        return [cx*(1-u-v)+points[i]*u+points[j]*v,cy*(1-u-v)+points[i+1]*u+points[j+1]*v,width];
+        const {points,cx,cy,width,axes}=this.frame,{i,j,u,v}=this.site;
+        return [cx*(1-u-v)+points[i]*u+points[j]*v,cy*(1-u-v)+points[i+1]*u+points[j+1]*v,width,axes];
     }
 }

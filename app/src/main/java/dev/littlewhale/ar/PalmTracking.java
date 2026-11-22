@@ -104,7 +104,7 @@ final class PalmTracking {
             missingSince=0;lastGood=now;
             // The live preview may deliver many frames while one inference is still running.
             inferenceGrace=Math.max(580,Math.min(1400,3*(completed-time)+160));
-            view.palmSurface(lock.outline,lock.width,lock.side);
+            view.palmSurface(lock.outline,lock.width,lock.side,lock.axes);
         }else if(lock.visible && missingSince==0)missingSince=time;
         ui.removeCallbacks(expire);
         if(lock.visible)expire();

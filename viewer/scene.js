@@ -292,7 +292,11 @@ function turnToCamera(duration){
 // The detector and the WebView share the corrected preview rectangle. Project the feet
 // onto the measured palm center and choose apparent height in proportion to palm width.
 const palmCamera=new THREE.PerspectiveCamera(45,1,.02,100);
-function showOnPalm(x,y,width){
+const across=new THREE.Vector3(),towardFingers=new THREE.Vector3(),palmUp=new THREE.Vector3();
+const palmRight=new THREE.Vector3(),palmFront=new THREE.Vector3(),contact=new THREE.Vector3();
+const palmBasis=new THREE.Matrix4(),measuredRotation=new THREE.Quaternion(),palmRotation=new THREE.Quaternion();
+let palmPoseTime=0,palmLift=0;
+function showOnPalm(x,y,width,axes){
     if(!ready || !renderer || innerWidth<=0 || innerHeight<=0)return;
     palmCamera.aspect=innerWidth/innerHeight;
     palmCamera.updateProjectionMatrix();
@@ -300,14 +304,45 @@ function showOnPalm(x,y,width){
     camera.projectionMatrixInverse.copy(palmCamera.projectionMatrixInverse);
     const fy=camera.projectionMatrix.elements[5],fx=camera.projectionMatrix.elements[0];
     const depth=fy/(2*Math.max(.018,Math.min(.85,width*1.38*palmCamera.aspect)));
-    anchor.matrix.makeRotationX(.28);
-    anchor.matrix.setPosition((2*x-1)*depth/fx,(1-2*y)*depth/fy,-depth);
+    across.fromArray(axes);towardFingers.fromArray(axes,3);
+    palmUp.crossVectors(across,towardFingers).multiplyScalar(palm.frame.side===1?1:-1);
+    if(palmUp.lengthSq()<1e-10){hide();return;}
+    palmUp.normalize();
+    palmRight.crossVectors(towardFingers,palmUp).normalize();
+    palmFront.crossVectors(palmRight,palmUp);
+    palmBasis.makeBasis(palmRight,palmUp,palmFront);
+    measuredRotation.setFromRotationMatrix(palmBasis);
+    const now=performance.now(),dt=(now-palmPoseTime)/1000;
+    if(!shown || dt>.335)palmRotation.copy(measuredRotation);
+    else palmRotation.slerp(measuredRotation,1-Math.exp(-Math.max(0,dt)*18));
+    palmPoseTime=now;
+    contact.set((2*x-1)*depth/fx,(1-2*y)*depth/fy,-depth);
+    if(palm.site.yaw===undefined){
+        // Choose a bearing once. A straight-down view uses the wrist as the front.
+        eye.copy(contact).negate().normalize().applyQuaternion(measuredRotation.clone().invert());
+        palm.site.yaw=Math.hypot(eye.x,eye.z)>.32?Math.atan2(eye.x,eye.z):0;
+        actor.rotation.y=palm.site.yaw;
+    }
+    anchor.matrix.makeRotationFromQuaternion(palmRotation);
+    // V21's sole runs from heel to toes in front of the ankle midpoint.
+    const sole=headCenter.set(0,0,.035*actor.scale.x).applyQuaternion(actor.quaternion).applyQuaternion(palmRotation);
+    if(palmLift){
+        const crown=headTop.set(0,actor.scale.y,0).applyQuaternion(palmRotation).add(contact);
+        const projectedHeight=Math.abs(crown.y/Math.max(.02,-crown.z)-contact.y/depth);
+        contact.y+=depth*projectedHeight*palmLift;
+    }
+    anchor.matrix.setPosition(contact.sub(sole));
     anchor.matrixWorldNeedsUpdate=true;
     shown=true;request();
 }
-function palmSurface(points,width,side){
+function palmSurface(points,width,side,axes){
     if(!ready)return;
-    const point=palm.update(points,width,side);
+    const point=palm.update(points,width,side,axes);
+    if(point)showOnPalm(...point);
+}
+function setPalmLift(percent){
+    palmLift=Math.max(0,Math.min(50,percent))/100;
+    const point=palm.foot();
     if(point)showOnPalm(...point);
 }
 function choosePalmPoint(){palm.reset();hide();}
@@ -318,7 +353,7 @@ function setSize(percent){
     roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
 }
 function editArea(){if(!shown || !ready)return false;cancelTouch();area.open();return true;}
-window.whale={pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,editArea};
+window.whale={pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,setPalmLift,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);

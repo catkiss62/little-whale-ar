@@ -21,7 +21,7 @@ final class CharacterView extends WebView {
     String palmSide;
     private boolean sendingPalm;
     private String latestPalm;
-    int renderFps, frameLimit=60, sizePercent=100;
+    int renderFps, frameLimit=60, sizePercent=100,palmLift=0;
     String state="starting";
     CharacterView(Context c){
         super(c);
@@ -38,7 +38,7 @@ final class CharacterView extends WebView {
             });}
             @JavascriptInterface public void status(String s){post(()->{
                 if(disposed)return;
-                if(s.equals("page")){page=true;state="waiting";setFrameLimit(frameLimit);setSize(sizePercent);startIfAvailable();}
+                if(s.equals("page")){page=true;state="waiting";setFrameLimit(frameLimit);setSize(sizePercent);setPalmLift(palmLift);startIfAvailable();}
                 else if(s.equals("ready")||s.equals("loading")||s.equals("error"))state=s;
             });}
         },"WhaleHost");
@@ -81,6 +81,10 @@ final class CharacterView extends WebView {
         sizePercent=Math.max(25,Math.min(200,percent));
         if(page && !disposed)evaluateJavascript("whale.setSize("+sizePercent+")",null);
     }
+    void setPalmLift(int percent){
+        palmLift=Math.max(0,Math.min(50,percent));
+        if(page && !disposed)evaluateJavascript("whale.setPalmLift("+palmLift+")",null);
+    }
     void editArea(){
         if(page && !disposed)evaluateJavascript("whale.editArea()",result->{
             if(!"true".equals(result))android.widget.Toast.makeText(getContext(),"请先放置小鲸鱼并对准原桌面",android.widget.Toast.LENGTH_SHORT).show();
@@ -102,10 +106,10 @@ final class CharacterView extends WebView {
         pending=true;visiblePose=true;
         evaluateJavascript("whale.pose("+Arrays.toString(mv)+","+Arrays.toString(projection)+")", unused->pending=false);
     }
-    void palmSurface(float[] outline,float width,String side){
+    void palmSurface(float[] outline,float width,String side,float[] axes){
         if(disposed || !"ready".equals(state))return;
         visiblePose=true;
-        latestPalm="whale.palmSurface("+Arrays.toString(outline)+","+width+","+("Left".equals(side)?0:1)+")";
+        latestPalm="whale.palmSurface("+Arrays.toString(outline)+","+width+","+("Left".equals(side)?0:1)+","+Arrays.toString(axes)+")";
         sendPalm();
     }
     private void sendPalm(){
