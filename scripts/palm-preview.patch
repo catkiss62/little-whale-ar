@@ -1,0 +1,26 @@
+--- a/app/src/main/java/com/orb/slam2s/camera/CameraPreviewView.java
++++ b/app/src/main/java/com/orb/slam2s/camera/CameraPreviewView.java
+@@ -137,6 +137,10 @@
+     private final AtomicBoolean mIsIpcProcessing = new AtomicBoolean(false);
+ 
+     private FrameListener mFrameListener;
++    // The bitmap is already in preview coordinates and is borrowed only during this call.
++    public interface PreviewFrameListener { void onPreviewFrame(Bitmap preview); }
++    private volatile PreviewFrameListener previewFrameListener;
++    public void setPreviewFrameListener(PreviewFrameListener listener) { previewFrameListener = listener; }
+ 
+     public interface FrameListener {
+         void onCameraStarted(int width, int height);
+@@ -514,6 +518,12 @@
+                                     analyzeJavaPath(buf, rowStride, w, h, correction, ipcReady);
+                                 }
+ 
++                                PreviewFrameListener listener = previewFrameListener;
++                                if (listener != null) {
++                                    synchronized (mSyncLock) {
++                                        if (mCacheBitmap != null && !mCacheBitmap.isRecycled()) listener.onPreviewFrame(mCacheBitmap);
++                                    }
++                                }
+                                 if (mFrameListener != null) {
+                                     mFrameListener.onCameraFrame();
+                                 }

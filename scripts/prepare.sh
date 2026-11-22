@@ -15,3 +15,15 @@ git -C upstream submodule update --init --depth=1 -- MenthaAR/src/main/cpp/Third
 if ! git -C upstream apply --reverse --check ../scripts/visual-recovery.patch 2>/dev/null; then
   git -C upstream apply ../scripts/visual-recovery.patch
 fi
+
+if ! git -C upstream apply --reverse --check ../scripts/palm-preview.patch 2>/dev/null; then
+  git -C upstream apply ../scripts/palm-preview.patch
+fi
+model=app/build/palm-assets/hand_landmarker.task
+digest=fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1
+if ! echo "$digest  $model" | sha256sum --check --status 2>/dev/null; then
+  mkdir -p "$(dirname "$model")"
+  curl -fsSL --retry 3 https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task -o "$model.tmp"
+  echo "$digest  $model.tmp" | sha256sum --check
+  mv "$model.tmp" "$model"
+fi

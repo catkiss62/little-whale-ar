@@ -36,6 +36,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     private TextView status;
     private CharacterView whale;
     private Button characterMode;
+    private boolean palmMode;
+    private PalmTracking palm;
     private boolean showWhale, recovering, otherMap;
     private int goodFrames, lastGoodFrame = -1;
     private final ActivityResultLauncher<String[]> pickModel = registerForActivityResult(
@@ -65,6 +67,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        palmMode=state!=null && state.getBoolean("palmMode");
         engine = new MenthaAR(this);
         engine.setPointCloudVisible(false);
         engine.setPoseAssistEnabled(true);
@@ -96,7 +99,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         whale = new CharacterView(this);
         whale.setFrameLimit(getPreferences(MODE_PRIVATE).getInt("frameLimit",60));
         whale.setSize(getPreferences(MODE_PRIVATE).getInt("sizePercent",100));
-        showWhale = getPreferences(MODE_PRIVATE).getBoolean("character", true);
+        showWhale = palmMode || getPreferences(MODE_PRIVATE).getBoolean("character", true);
         FrameLayout.LayoutParams fit = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         preview.addView(camera, fit);
         preview.addView(cube, new FrameLayout.LayoutParams(1, 1, Gravity.CENTER));
@@ -132,6 +135,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     }
 
     private void switchMode(boolean character) {
+        if(palmMode)setPalmMode(false);
         showWhale=character;
         getPreferences(MODE_PRIVATE).edit().putBoolean("character",character).apply();
         cube.clear(false); whale.clearPose(false);
@@ -142,10 +146,11 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
 
     private void chooseMode() {
         boolean installed=CharacterFile.file(this).isFile();
-        AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("桌面角色");
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("角色与模式");
         if(installed){
-            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%","绘制活动范围"},(d,index)->{
-                if(index==5){whale.editArea();return;}
+            dialog.setItems(new String[]{"小鲸鱼 V21","对照方块","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%",palmMode?"返回桌面重新放置":"绘制活动范围",palmMode?"掌上模式（当前）":"掌上模式"},(d,index)->{
+                if(index==6){setPalmMode(true);return;}
+                if(index==5){if(palmMode){setPalmMode(false);return;}whale.editArea();return;}
                 if(index==4){
                     int[] sizes={25,50,75,100,125,150,200};
                     String[] labels=new String[sizes.length];
@@ -186,6 +191,28 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         dialog.show();
     }
 
+    private void setPalmMode(boolean enabled){
+        if(palmMode==enabled)return;
+        stopPalm();
+        palmMode=enabled;resetAnchor();
+        if(enabled){
+            showWhale=true;whale.setVisibility(android.view.View.VISIBLE);whale.startIfAvailable();
+            if(active){engine.stop();startPalm();}
+        }else if(active)engine.start();
+        updateControls();
+    }
+    private void startPalm(){
+        stopPalm();
+        palm=new PalmTracking(this,whale);camera.setPreviewFrameListener(palm::offer);
+    }
+    private void stopPalm(){
+        camera.setPreviewFrameListener(null);
+        if(palm!=null){palm.close();palm=null;}
+    }
+    @Override protected void onSaveInstanceState(Bundle out){
+        super.onSaveInstanceState(out);out.putBoolean("palmMode",palmMode);
+    }
+
     private boolean hasCamera() { return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED; }
 
     private void act() {
@@ -194,6 +221,9 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
                 permission.launch(Manifest.permission.CAMERA);
             else startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + getPackageName())));
+        } else if (palmMode && !unavailable) {
+            if(palm!=null && palm.failed()){whale.clearPose(false);startPalm();}
+            else setPalmMode(false);
         } else if (placed || unavailable) {
             recreate();
         } else if (showWhale && !"ready".equals(whale.state)) {
@@ -222,7 +252,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         unavailable = false;
         active = true;
         camera.onResume();
-        engine.start();
+        if(palmMode)startPalm();else engine.start();
         camera.enableView();
     }
 
@@ -236,7 +266,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     @Override protected void onPause() {
         handler.removeCallbacks(refresh);
         if (active) {
-            active = false;
+            active = false;stopPalm();
             camera.disableView();
             camera.onPause();
             engine.stop();
@@ -247,9 +277,9 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     }
 
     @Override public void onReady() { runOnUiThread(this::updateControls); }
-    @Override public void onDisconnected() { runOnUiThread(() -> { resetAnchor(); updateControls(); }); }
+    @Override public void onDisconnected() { runOnUiThread(() -> { if(!palmMode && !engine.isConnected())resetAnchor(); updateControls(); }); }
     @Override public void onTrackingResult() {
-        if (!active || !engine.readResult(pose)) return;
+        if (!active || palmMode || !engine.readResult(pose)) return;
         long now = SystemClock.elapsedRealtime();
         if(placed && lastResult>0 && now-lastResult>1200) losePose();
         lastResult = now;
@@ -291,7 +321,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     private void updateControls() {
         if(showWhale) whale.startIfAvailable();
         long now = SystemClock.elapsedRealtime();
-        if (lastResult == 0 || now - lastResult > 1200) {
+        if (!palmMode && (lastResult == 0 || now - lastResult > 1200)) {
             tracked = false; fps = 0; losePose();
         }
         boolean timedOut = requestTime != 0 && now - requestTime > 3500;
@@ -302,6 +332,12 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             label = "相机权限"; message = "允许使用后置相机后即可扫描桌面"; enabled = true;
         } else if (unavailable) {
             label = "重试"; message = "相机打开失败，请关闭占用相机的应用后重试"; enabled = true;
+        } else if (palmMode) {
+            enabled=true;
+            label=palm!=null && palm.failed()?"重试手掌识别":"返回桌面";
+            message="error".equals(whale.state)?"角色显示失败，请重新载入":
+                !"ready".equals(whale.state)?"正在载入小鲸鱼…":
+                palm==null?"正在启动相机…":palm.status();
         } else if (!engine.isConnected()) {
             label = "重连"; message = "正在连接定位引擎"; enabled = active;
         } else if (showWhale && !"ready".equals(whale.state)) {
@@ -324,13 +360,13 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             enabled = true;
             message = placementFailed ? "这次未找到桌面 · 对准书封或桌面纹理，横移后重试" : "手机已定位 · 对准目标桌面，点放置";
         }
-        if (active && fps > 0) message += "\n定位 " + fps + " FPS";
+        if (!palmMode && active && fps > 0) message += "\n定位 " + fps + " FPS";
         if (showWhale && whale.renderFps>0) message += " · 角色 " + whale.renderFps + " FPS";
         if (CharacterFile.exporting) message += "\n正在导出 VRM " + CharacterFile.exportPercent + "%";
         if (!message.contentEquals(status.getText())) status.setText(message);
         if (!label.contentEquals(action.getText())) action.setText(label);
         action.setEnabled(enabled);
-        String mode=showWhale?"角色 · 小鲸鱼 V21   ▾":"角色 · 对照方块   ▾";
+        String mode=palmMode?"掌上 · 小鲸鱼 V21   ▾":showWhale?"角色 · 小鲸鱼 V21   ▾":"角色 · 对照方块   ▾";
         if(!mode.contentEquals(characterMode.getText()))characterMode.setText(mode);
     }
 

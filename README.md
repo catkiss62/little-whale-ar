@@ -1,6 +1,6 @@
 # 小鲸鱼 AR
 
-独立 Android 测试应用，包名 `dev.littlewhale.ar`。0.5.1 为 Redmi K80 Ultra 的桌面角色测试版，支持 arm64、Android 10 及以上。首次启动需要相机权限。
+独立 Android 测试应用，包名 `dev.littlewhale.ar`。0.6.0 为 Redmi K80 Ultra 的桌面角色测试版，支持 arm64、Android 10 及以上。首次启动需要相机权限。
 
 ## 小鲸鱼 V21
 
@@ -61,3 +61,7 @@ bash upstream/gradlew :app:assembleRelease
 ### 0.5.1 持续看镜头
 
 镜头停在她面前时，小鲸鱼会一直朝镜头看。抬高、放低或左右移动手机，她的头和眼睛会平滑跟随。摸头时她随手指反应，松开后重新看向镜头。
+
+### 0.6.0 掌上模式
+
+在角色菜单选择「掌上模式」，后置镜头对准张开的掌心。稳定识别后小鲸鱼出现，随掌心移动和远近调整大小；短时遮挡停留，持续丢手则隐藏。返回桌面后重新扫描放置。掌上识别在本机运行，使用随 APK 内置的 Google MediaPipe Hand Landmarker，角色沿用已导入的 V21。转身时头部的左右偏转随肩膀转动减小，抬头仍跟随镜头。

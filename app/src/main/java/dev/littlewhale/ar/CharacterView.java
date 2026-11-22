@@ -94,5 +94,10 @@ final class CharacterView extends WebView {
         pending=true;visiblePose=true;
         evaluateJavascript("whale.pose("+Arrays.toString(mv)+","+Arrays.toString(projection)+")", unused->pending=false);
     }
+    void palmPose(float x,float y,float width){
+        if(disposed||pending||!state.equals("ready"))return;
+        pending=true;visiblePose=true;
+        evaluateJavascript("whale.palmPose("+x+","+y+","+width+")",unused->pending=false);
+    }
     void close(){disposed=true;removeJavascriptInterface("WhaleHost");destroy();}
 }

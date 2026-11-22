@@ -39,10 +39,10 @@ function draw(now){
     nextFrame=nextFrame && now-nextFrame<step ? nextFrame+step : now+step;
     const dt=lastDraw ? Math.min(.1,(now-lastDraw)/1000) : 0;
     lastDraw=now;
-    let lead=0;
+    let turning=0;
     if(turnStart>=0){
         const t=Math.min(1,(now-turnStart)/turnDuration);
-        lead=Math.sin(Math.PI*t)*Math.sign(targetYaw-baseYaw);
+        turning=4*t*(1-t);
         actor.rotation.y=baseYaw+(targetYaw-baseYaw)*t*t*(3-2*t);
         if(t>=1)turnStart=-1;
     }
@@ -66,7 +66,7 @@ function draw(now){
         x=clamp((gesture.x-gesture.cx)/gesture.rx,.75);
         y=clamp((gesture.cy-gesture.y)/gesture.ry,.6);
     }
-    const wantedYaw=followingFinger?x*.24:clamp(yaw,.78)*sideWeight;
+    const wantedYaw=followingFinger?x*.24:clamp(yaw*(1-.45*turning),.78*(1-.35*turning))*sideWeight;
     const wantedPitch=followingFinger?y*.15:clamp(pitch,.60);
     const headBlend=1-Math.exp(-dt*5);
     headYaw+=(wantedYaw-headYaw)*headBlend; headPitch+=(wantedPitch-headPitch)*headBlend;
@@ -81,7 +81,7 @@ function draw(now){
     for(const [bone,rest,amount,basis] of joints){
         const share=bone===upper ? .08 : bone===neck ? .34 : .58;
         const pitch=(bone===upper?breath*.018:0)-headPitch*share + (tap*.13+affection*.19)*amount;
-        angles.set(pitch,amount*lead+headYaw*share,affection*(.25+.07*Math.sin(now*.004))*amount,'YXZ');
+        angles.set(pitch,headYaw*share,affection*(.25+.07*Math.sin(now*.004))*amount,'YXZ');
         applyRotation(bone,rest,basis,angles);
     }
     const stride=Math.sin(roam.phase);
@@ -270,6 +270,22 @@ function turnToCamera(duration){
     targetYaw=baseYaw+Math.atan2(Math.sin(desired-baseYaw),Math.cos(desired-baseYaw));
     turnStart=performance.now();request();
 }
+// The detector and the WebView share the corrected preview rectangle. Project the feet
+// onto the measured palm center and choose apparent height in proportion to palm width.
+const palmCamera=new THREE.PerspectiveCamera(45,1,.02,100);
+function palmPose(x,y,width){
+    if(!ready || !renderer || innerWidth<=0 || innerHeight<=0)return;
+    palmCamera.aspect=innerWidth/innerHeight;
+    palmCamera.updateProjectionMatrix();
+    camera.projectionMatrix.copy(palmCamera.projectionMatrix);
+    camera.projectionMatrixInverse.copy(palmCamera.projectionMatrixInverse);
+    const fy=camera.projectionMatrix.elements[5],fx=camera.projectionMatrix.elements[0];
+    const depth=fy/(2*Math.max(.018,Math.min(.85,width*1.38*palmCamera.aspect)));
+    anchor.matrix.makeRotationX(.28);
+    anchor.matrix.setPosition((2*x-1)*depth/fx,(1-2*y)*depth/fy,-depth);
+    anchor.matrixWorldNeedsUpdate=true;
+    shown=true;request();
+}
 function reset(){roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();}
 function setFrameLimit(value){frameLimit=value===30?30:60;nextFrame=sample=0;}
 function setSize(percent){
@@ -277,7 +293,7 @@ function setSize(percent){
     roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
 }
 function editArea(){if(!shown || !ready)return false;cancelTouch();area.open();return true;}
-window.whale={pose,hide,load,reset,setFrameLimit,setSize,editArea};
+window.whale={pose,palmPose,hide,load,reset,setFrameLimit,setSize,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);
