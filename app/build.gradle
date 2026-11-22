@@ -24,7 +24,7 @@ android {
                 'com/orb/slam2s/graphics/GLUtils.java'
     }
     // Only shaders from the sample are used. Other resources belong to its original UI.
-    sourceSets.main.res.srcDir layout.buildDirectory.dir('camera-res')
+    sourceSets.main.res.srcDir layout.buildDirectory.dir('camera-res').get().asFile
 }
 tasks.register('copyCameraShaders', Copy) {
     from '../upstream/app/src/main/res/raw'

@@ -35,7 +35,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     private TextView status;
     private Button action;
     private DisplayCorrection correction;
-    private boolean active, tracked, placed, unavailable;
+    private boolean active, tracked, placed, unavailable, placementFailed;
     private int anchorMap = -1, frames, fps;
     private long requestTime, lastResult, sampleStart;
     private final Runnable refresh = new Runnable() {
@@ -121,6 +121,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         } else if (placed || unavailable) {
             recreate();
         } else if (tracked && requestTime == 0) {
+            placementFailed = false;
             requestTime = SystemClock.elapsedRealtime();
             camera.requestPlaneDetection();
         } else if (!engine.isConnected()) {
@@ -131,6 +132,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
 
     private void resetAnchor() {
         requestTime = 0; placed = false; tracked = false; anchorMap = -1;
+        placementFailed = false;
         lastResult = 0; sampleStart = 0; frames = 0; fps = 0;
         cube.clear(true);
     }
@@ -215,5 +217,4 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         action.setEnabled(enabled);
     }
 
-    private boolean placementFailed;
 }
