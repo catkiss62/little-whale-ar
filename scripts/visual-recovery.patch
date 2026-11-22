@@ -1,0 +1,29 @@
+--- a/MenthaAR/src/main/java/com/orb/slam2s/sensors/PoseFusion.java
++++ b/MenthaAR/src/main/java/com/orb/slam2s/sensors/PoseFusion.java
+@@ -207,13 +207,8 @@
+                 System.arraycopy(rawPose, 0, mLastValidModel, 0, 16);
+             }
+ 
+-            // 从保持态恢复：以上一帧输出为起点平滑过渡到视觉位姿
+-            if (mPrevNonVision && mHasLastOut && rawDraw) {
+-                viewToQC(mLastOutView, mBlendFromQ, mBlendFromC);
+-                mBlendActive = true;
+-                mBlendStartNanos = nowNanos;
+-                mBlendDurationNanos = RECOVER_BLEND_NANOS;
+-            }
++            // Tabletop anchors resume at the observed visual pose.
++            mBlendActive = false;
+             mPrevNonVision = false;
+             mHolding = false;
+ 
+@@ -260,10 +255,6 @@
+             System.arraycopy(rawPose, 0, outModel, 0, 16);
+             System.arraycopy(rawPose, PROJ_OFFSET, outProjection, 0, 16);
+             System.arraycopy(rawPose, VIEW_OFFSET, outView, 0, 16);
+-            if (mBlendActive) {
+-                viewToQC(outView, mTq, mTc);
+-                applyBlend(mTq, mTc, nowNanos, outView);
+-            }
+             return rawDraw;
+         }
+ 

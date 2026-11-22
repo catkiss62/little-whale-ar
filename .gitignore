@@ -3,3 +3,6 @@
 **/.cxx/
 **/build/
 local.properties
+
+viewer/node_modules/
+app/src/main/assets/viewer/scene.bundle.js

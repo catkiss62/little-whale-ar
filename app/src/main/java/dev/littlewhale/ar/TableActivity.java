@@ -1,6 +1,7 @@
 package dev.littlewhale.ar;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -33,6 +34,12 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     private CameraPreviewView camera;
     private CubeOverlay cube;
     private TextView status;
+    private CharacterView whale;
+    private Button characterMode;
+    private boolean showWhale, recovering, otherMap;
+    private int goodFrames, lastGoodFrame = -1;
+    private final ActivityResultLauncher<String[]> pickModel = registerForActivityResult(
+        new ActivityResultContracts.OpenDocument(), uri -> { if(uri!=null) CharacterFile.obtain(this,uri); });
     private Button action;
     private DisplayCorrection correction;
     private boolean active, tracked, placed, unavailable, placementFailed;
@@ -82,14 +89,19 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         });
         camera.init();
         cube = new CubeOverlay(this);
+        whale = new CharacterView(this);
+        showWhale = getPreferences(MODE_PRIVATE).getBoolean("character", true);
         FrameLayout.LayoutParams fit = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         preview.addView(camera, fit);
         preview.addView(cube, new FrameLayout.LayoutParams(1, 1, Gravity.CENTER));
+        preview.addView(whale, new FrameLayout.LayoutParams(1, 1, Gravity.CENTER));
+        whale.setVisibility(showWhale ? android.view.View.VISIBLE : android.view.View.INVISIBLE);
         camera.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or_,ob) -> {
             ViewGroup.LayoutParams lp = cube.getLayoutParams();
             if (lp.width != r-l || lp.height != b-t) {
                 lp.width = r-l; lp.height = b-t;
                 cube.setLayoutParams(lp);
+                whale.setLayoutParams(new FrameLayout.LayoutParams(r-l,b-t,Gravity.CENTER));
             }
         });
         preview.setOnClickListener(v -> camera.autoFocusCenter());
@@ -106,8 +118,36 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         action.setOnClickListener(v -> act());
         bar.addView(action);
         page.addView(bar);
+        characterMode = new Button(this);
+        characterMode.setOnClickListener(v -> chooseMode());
+        page.addView(characterMode);
         setContentView(page);
         if (!hasCamera() && state == null) permission.launch(Manifest.permission.CAMERA);
+    }
+
+    private void switchMode(boolean character) {
+        showWhale=character;
+        getPreferences(MODE_PRIVATE).edit().putBoolean("character",character).apply();
+        cube.clear(false); whale.clearPose(false);
+        whale.setVisibility(character ? android.view.View.VISIBLE : android.view.View.INVISIBLE);
+        if(character) whale.startIfAvailable();
+        updateControls();
+    }
+
+    private void chooseMode() {
+        boolean installed=CharacterFile.file(this).isFile();
+        String[] choices=installed ? new String[]{"小鲸鱼 V21","对照方块"} :
+            new String[]{"从作者 GitHub 下载 V21（约 333 MiB）","从手机选择 V21 .vrm","对照方块"};
+        new AlertDialog.Builder(this).setTitle("桌面角色")
+            .setMessage("SmallBlueFish · CF-612 / YuChat。形象参考「这个刀子真甜」，原形象 @ZipZipPipe、@上善无形。仅供个人非商用测试。")
+            .setPositiveButton("选择", (dialog,w)->new AlertDialog.Builder(this).setItems(choices,(d,index)->{
+                if(index==choices.length-1){switchMode(false);return;}
+                switchMode(true);
+                if(!installed){
+                    if(index==0)CharacterFile.obtain(this,null);
+                    else pickModel.launch(new String[]{"*/*"});
+                }else if("error".equals(whale.state)) recreate();
+            }).show()).setNegativeButton("返回",null).show();
     }
 
     private boolean hasCamera() { return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED; }
@@ -120,6 +160,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
                 Uri.parse("package:" + getPackageName())));
         } else if (placed || unavailable) {
             recreate();
+        } else if (showWhale && !"ready".equals(whale.state)) {
+            chooseMode();
         } else if (tracked && requestTime == 0) {
             placementFailed = false;
             requestTime = SystemClock.elapsedRealtime();
@@ -134,7 +176,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         requestTime = 0; placed = false; tracked = false; anchorMap = -1;
         placementFailed = false;
         lastResult = 0; sampleStart = 0; frames = 0; fps = 0;
-        cube.clear(true);
+        cube.clear(true); whale.clearPose(true);
+        otherMap=false; recovering=false; goodFrames=0; lastGoodFrame=-1;
     }
 
     private void startSession() {
@@ -169,7 +212,9 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     @Override public void onDisconnected() { runOnUiThread(() -> { resetAnchor(); updateControls(); }); }
     @Override public void onTrackingResult() {
         if (!active || !engine.readResult(pose)) return;
-        lastResult = SystemClock.elapsedRealtime();
+        long now = SystemClock.elapsedRealtime();
+        if(placed && lastResult>0 && now-lastResult>1200) losePose();
+        lastResult = now;
         if (sampleStart == 0) sampleStart = lastResult;
         frames++;
         if (lastResult - sampleStart >= 1000) {
@@ -177,22 +222,43 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             sampleStart = lastResult; frames = 0;
         }
         tracked = pose.isTracked();
-        if (placed && pose.mapId != anchorMap && tracked) resetAnchor();
-        if (!tracked || !pose.drawable || correction == null) { cube.clear(false); return; }
+        otherMap = placed && tracked && pose.mapId != anchorMap;
+        if (!tracked || otherMap || !pose.drawable || correction == null) { losePose(); return; }
+        if (recovering) {
+            if (lastGoodFrame != pose.frameId) { goodFrames++; lastGoodFrame=pose.frameId; }
+            if (goodFrames<3) return;
+            recovering=false;
+        }
         if (!placed && requestTime != 0) {
             anchorMap = pose.mapId; placed = true; requestTime = 0;
         }
-        if (placed && pose.mapId == anchorMap) cube.update(pose, correction);
+        if (placed && pose.mapId == anchorMap) {
+            if(showWhale) whale.pose(pose,correction);
+            else cube.update(pose, correction);
+        }
+    }
+
+    private void losePose() {
+        if(placed)recovering=true;
+        goodFrames=0;lastGoodFrame=-1;
+        cube.clear(false);whale.clearPose(false);
+    }
+
+    @Override protected void onDestroy() {
+        ((ViewGroup)whale.getParent()).removeView(whale);
+        whale.close();
+        super.onDestroy();
     }
 
     private void updateControls() {
+        if(showWhale) whale.startIfAvailable();
         long now = SystemClock.elapsedRealtime();
         if (lastResult == 0 || now - lastResult > 1200) {
-            tracked = false; fps = 0; cube.clear(false);
+            tracked = false; fps = 0; losePose();
         }
         boolean timedOut = requestTime != 0 && now - requestTime > 3500;
         if (timedOut) { requestTime = 0; placementFailed = true; }
-        String label = "放置方块", message;
+        String label = showWhale ? "放置小鲸鱼" : "放置方块", message;
         boolean enabled = false;
         if (!hasCamera()) {
             label = "相机权限"; message = "允许使用后置相机后即可扫描桌面"; enabled = true;
@@ -200,9 +266,17 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             label = "重试"; message = "相机打开失败，请关闭占用相机的应用后重试"; enabled = true;
         } else if (!engine.isConnected()) {
             label = "重连"; message = "正在连接定位引擎"; enabled = active;
+        } else if (showWhale && !"ready".equals(whale.state)) {
+            label="选择角色"; enabled=true;
+            if(CharacterFile.busy) message="获取小鲸鱼 " + CharacterFile.percent + "%";
+            else if("error".equals(whale.state)) message="角色显示失败，点此重试或切换方块";
+            else if(CharacterFile.file(this).isFile()) message="正在载入小鲸鱼…";
+            else message=CharacterFile.failure==null?"首次使用，请下载或导入小鲸鱼 V21":CharacterFile.failure;
         } else if (placed) {
             label = "重新扫描"; enabled = true;
-            message = tracked ? "已放置 · 绕桌观察不同颜色的面" : "跟踪中断 · 将镜头移回刚才的桌面";
+            if(otherMap) message="正在另一张地图 · 对准原来的桌面";
+            else if(!tracked || recovering) message="正在找回原位 · 对准刚才的桌面";
+            else message=showWhale?"已放置 · 绕到背面，点一下尾巴":"已放置 · 绕桌观察不同颜色的面";
         } else if (!tracked) {
             message = "对准有纹理的桌面，缓慢左右平移手机";
         } else if (requestTime != 0) {
@@ -215,6 +289,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         if (!message.contentEquals(status.getText())) status.setText(message);
         if (!label.contentEquals(action.getText())) action.setText(label);
         action.setEnabled(enabled);
+        String mode=showWhale?"角色 · 小鲸鱼 V21   ▾":"角色 · 对照方块   ▾";
+        if(!mode.contentEquals(characterMode.getText()))characterMode.setText(mode);
     }
 
 }

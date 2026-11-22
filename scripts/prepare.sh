@@ -11,3 +11,7 @@ if ! git -C upstream cat-file -e "$revision^{commit}" 2>/dev/null; then
 fi
 git -C upstream checkout -q --detach "$revision"
 git -C upstream submodule update --init --depth=1 -- MenthaAR/src/main/cpp/Thirdparty/opencv
+# Keep gravity-assisted plane detection, but publish measured visual poses immediately.
+if ! git -C upstream apply --reverse --check ../scripts/visual-recovery.patch 2>/dev/null; then
+  git -C upstream apply ../scripts/visual-recovery.patch
+fi
