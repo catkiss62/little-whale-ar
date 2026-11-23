@@ -11,10 +11,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import cn.easyar.CalibrationDownloader;
 import cn.easyar.Engine;
-import cn.easyar.ImmediateCallbackScheduler;
-import cn.easyar.MotionTrackerCameraDevice;
 import cn.easyar.SurfaceTracker;
 
 /** Independent camera session for testing EasyAR on the same desk as the normal engine. */
@@ -23,8 +20,7 @@ public final class EasyLabActivity extends Activity {
     private FrameLayout root;
     private GLSurfaceView view;
     private EasyLabSession session;
-    private CalibrationDownloader calibration;
-    private boolean initialized, resumed, surface;
+    private boolean initialized, resumed;
     private long started;
     private CharacterView whale;
     private final float[] model = new float[16], projection = new float[16];
@@ -57,7 +53,6 @@ public final class EasyLabActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        surface = getIntent().getBooleanExtra("surface", false);
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         root.setOnApplyWindowInsetsListener((v, insets) -> {
@@ -66,14 +61,12 @@ public final class EasyLabActivity extends Activity {
             return insets;
         });
         setContentView(root);
-        if (getIntent().getBooleanExtra("character", false)) {
-            whale = new CharacterView(this);
-            android.content.SharedPreferences prefs = getSharedPreferences("TableActivity", MODE_PRIVATE);
-            whale.setFrameLimit(prefs.getInt("frameLimit", 60));
-            whale.setReferenceWalk(prefs.getBoolean("referenceWalk", true));
-            whale.setSize(prefs.getInt("sizePercent", 100));
-            root.addView(whale, new FrameLayout.LayoutParams(-1, -1));
-        }
+        whale = new CharacterView(this);
+        android.content.SharedPreferences prefs = getSharedPreferences("TableActivity", MODE_PRIVATE);
+        whale.setFrameLimit(prefs.getInt("frameLimit", 60));
+        whale.setReferenceWalk(prefs.getBoolean("referenceWalk", true));
+        whale.setSize(prefs.getInt("sizePercent", 100));
+        root.addView(whale, new FrameLayout.LayoutParams(-1, -1));
         status = new TextView(this);
         status.setTextColor(Color.WHITE);
         status.setBackgroundColor(0xcc102030);
@@ -100,7 +93,7 @@ public final class EasyLabActivity extends Activity {
     private void show(String text) { trackingStatus = text; updateStatus(); }
 
     private void updateStatus() {
-        String text = (surface ? "轻量表面" : "水平面") + " · " + trackingStatus;
+        String text = "EasyAR 轻量表面" + " · " + trackingStatus;
         if (whale != null && !"ready".equals(whale.state))
             text += "error".equals(whale.state) ? " · 角色载入失败" : " · 正在载入小鲸鱼";
         if (!text.contentEquals(status.getText())) status.setText(text);
@@ -111,7 +104,7 @@ public final class EasyLabActivity extends Activity {
         view = new GLSurfaceView(this);
         view.setEGLContextClientVersion(3);
         view.setEGLConfigChooser(8, 8, 8, 8, 16, 0);
-        session = new EasyLabSession(this, surface, whale != null, started);
+        session = new EasyLabSession(this, started);
         view.setRenderer(session);
         root.addView(view, 0, new FrameLayout.LayoutParams(-1, -1));
         TextView aim = new TextView(this);
@@ -133,20 +126,7 @@ public final class EasyLabActivity extends Activity {
         started = SystemClock.elapsedRealtime();
         Engine.onResume();
         if (view != null) { session.resetClock(started); view.onResume(); return; }
-        if (surface) {
-            if (SurfaceTracker.isAvailable()) openView(); else show("设备不支持轻量表面跟踪");
-        } else if (MotionTrackerCameraDevice.isAvailable()) {
-            openView();
-        } else if (calibration == null) {
-            show("正在检查设备标定");
-            calibration = new CalibrationDownloader();
-            calibration.download(10000, ImmediateCallbackScheduler.getDefault(), (result, detail) ->
-                runOnUiThread(() -> {
-                    if (isDestroyed() || !resumed) return;
-                    if (MotionTrackerCameraDevice.isAvailable()) openView();
-                    else show("运动跟踪不可用 · 标定状态 " + result + "，可返回试轻量表面");
-                }));
-        } else show("运动跟踪不可用，可返回试轻量表面");
+        if (SurfaceTracker.isAvailable()) openView(); else show("设备不支持轻量表面跟踪");
     }
 
     @Override protected void onPause() {
@@ -167,7 +147,6 @@ public final class EasyLabActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (whale != null) { root.removeView(whale); whale.close(); }
-        if (calibration != null) calibration.dispose();
         super.onDestroy();
     }
 }

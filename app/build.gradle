@@ -9,8 +9,8 @@ android {
         applicationId 'dev.littlewhale.ar'
         minSdk 29
         targetSdk 35
-        versionCode 20
-        versionName '0.15.0'
+        versionCode 21
+        versionName '0.16.0'
         ndk { abiFilters 'arm64-v8a' }
     }
     externalNativeBuild { cmake { path 'CMakeLists.txt'; version '3.22.1' } }
@@ -55,7 +55,7 @@ if (project.hasProperty('easyarRoot')) {
     def license = file(project.property('easyarLicense'))
     def localInputs = layout.buildDirectory.dir('easyar-inputs').get().asFile
     tasks.register('prepareEasyAR', Sync) {
-        from(sample) { include '**/BoxRenderer.java', '**/BGRenderer.java'; into 'java' }
+        from(sample) { include '**/BGRenderer.java'; into 'java' }
         from(license) { rename { 'easyar-license.txt' }; into 'assets' }
         into localInputs
     }
