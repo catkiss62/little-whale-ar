@@ -5,6 +5,7 @@
     <queries><package android:name="com.google.ar.core"/></queries>
     <application android:allowBackup="false" android:label="小鲸鱼 AR" android:icon="@drawable/ic_whale" android:theme="@android:style/Theme.Material.NoActionBar">
         <meta-data android:name="com.google.ar.core" android:value="optional"/>
+        <activity android:name="dev.littlewhale.ar.EasyLabActivity" android:exported="false" android:screenOrientation="portrait"/>
         <activity android:name="dev.littlewhale.ar.CoreLabActivity" android:exported="false" android:screenOrientation="portrait"/>
         <activity android:name="dev.littlewhale.ar.ImageLabActivity" android:exported="false" android:screenOrientation="portrait"/>
         <activity android:name="dev.littlewhale.ar.TableActivity" android:exported="true" android:screenOrientation="portrait">
