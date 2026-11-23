@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {contains,clearRoute} from './roam.js';
+import {contains,clearRoute,walkSpeed} from './roam.js';
 
 const ease=t=>{t=Math.min(1,Math.max(0,t));return t*t*(3-2*t);};
 export class Coin {
@@ -66,7 +66,7 @@ export class Coin {
         }
         if(reached){this.setState(this.state==='return'?'hold':'lift');this.since=now;return;}
         roam.speed=Math.min(1,d/(.13*actor.scale.x)+.12);
-        const step=Math.min(d,dt*.31*actor.scale.x*roam.speed);
+        const step=Math.min(d,dt*walkSpeed*actor.scale.x*roam.speed);
         actor.position.x+=dx/d*step;actor.position.z+=dz/d*step;roam.phase+=step/actor.scale.x*23;
     }
     alignArm(rig,side,target,weight){

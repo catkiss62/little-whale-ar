@@ -1,3 +1,4 @@
+export const walkSpeed=.465; // Model heights per second
 // Points are in the anchor's XZ plane. Camera motion never changes the stored polygon.
 const cross=(a,b,p)=>(b.x-a.x)*(p.z-a.z)-(b.z-a.z)*(p.x-a.x);
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
@@ -93,7 +94,7 @@ export class Roam {
         actor.rotation.y+=Math.sign(diff)*Math.min(Math.abs(diff),dt*2.9);
         if(Math.abs(diff)>.22){this.turn=diff>0?'locomotion_left':'locomotion_right';return;}
         this.speed=Math.min(1,remaining/(.13*size)+.12);
-        const step=Math.min(remaining,dt*.31*size*this.speed);
+        const step=Math.min(remaining,dt*walkSpeed*size*this.speed);
         p.x+=dx/remaining*step;p.z+=dz/remaining*step;
         this.phase+=step/size*23;
         if(this.spoke)return;

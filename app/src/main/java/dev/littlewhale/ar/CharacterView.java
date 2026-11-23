@@ -20,12 +20,12 @@ final class CharacterView extends WebView {
     interface SurfaceTap { void tap(float x,float y); }
     SurfaceTap surfaceTap;
     boolean carrying,hasCarried;
-    boolean referenceWalk=true;
+    Runnable importModel;
     boolean beingPetted;
     String palmSide;
     private boolean sendingPalm;
     private String latestPalm;
-    int renderFps, frameLimit=60, sizePercent=100,palmLift=50;
+    int renderFps, sizePercent=100,palmLift=50;
     String state="starting";
     CharacterView(Context c){
         super(c);
@@ -36,13 +36,14 @@ final class CharacterView extends WebView {
         getSettings().setAllowFileAccess(false);
         setWebChromeClient(new WebChromeClient());
         addJavascriptInterface(new Object(){
-            @JavascriptInterface public int speechSpeed(){return c.getSharedPreferences("voice",0).getInt("speed",-1);}
-            @JavascriptInterface public void saveSpeechSpeed(int speed){if(speed>=-1 && speed<=2)c.getSharedPreferences("voice",0).edit().putInt("speed",speed).apply();}
+            @JavascriptInterface public boolean voiceEnabled(){return c.getSharedPreferences("voice",0).getBoolean("enabled",true);}
+            @JavascriptInterface public void saveVoiceEnabled(boolean enabled){c.getSharedPreferences("voice",0).edit().putBoolean("enabled",enabled).apply();}
+            @JavascriptInterface public void importModel(){post(()->{if(!disposed && importModel!=null)importModel.run();});}
             @JavascriptInterface public void surfaceTap(float x,float y){post(()->{
                 if(!disposed && surfaceTap!=null && x>=0 && x<=1 && y>=0 && y<=1)surfaceTap.tap(x,y);
             });}
             @JavascriptInterface public void carryState(boolean held){post(()->{carrying=held;if(held)hasCarried=true;});}
-            @JavascriptInterface public void motionError(){post(()->{if(!disposed)android.widget.Toast.makeText(getContext(),"动作下载未完成，可在角色与模式中导入动作包",android.widget.Toast.LENGTH_LONG).show();});}
+            @JavascriptInterface public void motionError(){post(()->{if(!disposed)android.widget.Toast.makeText(getContext(),"角色动作加载失败",android.widget.Toast.LENGTH_LONG).show();});}
             @JavascriptInterface public void petting(boolean on){post(()->beingPetted=on && visiblePose && !disposed);}
             @JavascriptInterface public void reportFps(int value){post(()->{if(visiblePose && !disposed)renderFps=value;});}
             @JavascriptInterface public void placedOnPalm(String side){post(()->{
@@ -50,7 +51,7 @@ final class CharacterView extends WebView {
             });}
             @JavascriptInterface public void status(String s){post(()->{
                 if(disposed)return;
-                if(s.equals("page")){page=true;state="waiting";setReferenceWalk(referenceWalk);setFrameLimit(frameLimit);setSize(sizePercent);setPalmLift(palmLift);startIfAvailable();}
+                if(s.equals("page")){page=true;state="waiting";setSize(sizePercent);setPalmLift(palmLift);startIfAvailable();}
                 else if(s.equals("ready")||s.equals("loading")||s.equals("error"))state=s;
             });}
         },"WhaleHost");
@@ -90,15 +91,9 @@ final class CharacterView extends WebView {
     void startIfAvailable(){
         if(page&&!started&&!disposed&&CharacterFile.file(getContext()).isFile()){
             started=true;state="loading";evaluateJavascript("whale.load()",null);
+        }else if(page && !disposed && !started && importModel!=null && state.equals("waiting")){
+            state="ready";evaluateJavascript("whale.missing()",null);
         }
-    }
-    void setFrameLimit(int limit){
-        frameLimit=limit==30?30:60;
-        if(page&&!disposed)evaluateJavascript("whale.setFrameLimit("+frameLimit+")",null);
-    }
-    void setReferenceWalk(boolean enabled){
-        referenceWalk=enabled;
-        if(page&&!disposed)evaluateJavascript("whale.setReferenceWalk("+enabled+")",null);
     }
     void setSize(int percent){
         sizePercent=Math.max(25,Math.min(200,percent));
@@ -149,6 +144,7 @@ final class CharacterView extends WebView {
         palmSide=null;renderFps=0;
         if(page && !disposed)evaluateJavascript("whale.choosePalmPoint()",null);
     }
+    @Override public void onResume(){super.onResume();if(!disposed && page)evaluateJavascript("window.whale?.syncVoice?.()",null);}
     @Override public void onPause(){if(!disposed && page)evaluateJavascript("window.whale?.stopSpeech?.()",null);super.onPause();}
     void close(){disposed=true;removeJavascriptInterface("WhaleHost");destroy();}
 }

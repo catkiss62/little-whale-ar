@@ -56,8 +56,6 @@ public final class CoreLabActivity extends Activity {
         whale = new CharacterView(this);
         android.content.SharedPreferences prefs = getSharedPreferences("TableActivity", MODE_PRIVATE);
         whale.setSize(prefs.getInt("sizePercent", 100));
-        whale.setFrameLimit(prefs.getInt("frameLimit", 60));
-        whale.setReferenceWalk(prefs.getBoolean("referenceWalk", true));
         whale.surfaceTap = (x,y) -> {
             if (running) {
                 float px=x*surface.getWidth(), py=y*surface.getHeight();

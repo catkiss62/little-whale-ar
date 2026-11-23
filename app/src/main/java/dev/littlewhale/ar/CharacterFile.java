@@ -20,7 +20,7 @@ final class CharacterFile {
     static volatile String failure;
     static File file(Context c) { return new File(c.getFilesDir(), "SmallBlueFish-V21.vrm"); }
     static synchronized void obtain(Context c, Uri uri) {
-        if (busy || file(c).isFile()) return;
+        if (busy) return;
         final Context app=c.getApplicationContext();
         busy=true; percent=0; failure=null;
         worker.execute(()->{
@@ -44,27 +44,12 @@ final class CharacterFile {
             }finally{temp.delete();busy=false;}
         });
     }
-    static volatile boolean exporting;
-    static volatile int exportPercent;
-    static synchronized void exportOriginal(Context context, Uri uri) {
-        if(exporting)return;
-        final Context app=context.getApplicationContext();
-        exporting=true; exportPercent=0;
-        worker.execute(()->{
-            String result;
-            try(InputStream in=new FileInputStream(file(app));
-                OutputStream out=app.getContentResolver().openOutputStream(uri,"wt")){
-                if(out==null)throw new IOException("无法打开保存位置");
-                VrmCopy.copy(in,out,p -> exportPercent=p);
-                result="已导出完整 V21 原文件，可从本机再次导入";
-            }catch(Exception e){
-                Log.w("LittleWhaleAR","Model export",e);
-                result="导出失败，目标文件可能不完整，请重新选择保存位置";
-            }finally{exporting=false;}
-            final String message=result;
-            new android.os.Handler(android.os.Looper.getMainLooper()).post(()->
-                android.widget.Toast.makeText(app,message,android.widget.Toast.LENGTH_LONG).show());
-        });
+    static synchronized boolean remove(Context c){
+        if(busy || !file(c).delete())return false;
+        File[] textures=c.getCacheDir().listFiles((dir,name)->name.matches("v21-[0-9]+-[0-9]+[.]png([.]part)?"));
+        if(textures!=null)for(File texture:textures)texture.delete();
+        failure=null;
+        return true;
     }
     // Re-encode only oversized material textures. Limit simultaneous bitmap allocations.
     static synchronized InputStream texture(Context c,long offset,long length)throws IOException{

@@ -61,16 +61,4 @@ final class ReferenceMotions {
         }
         throw new FileNotFoundException();
     }
-    static void importFile(Context c,Uri uri)throws Exception{
-        byte[][] data=new byte[Clip.values().length][];
-        try(ZipInputStream z=new ZipInputStream(new BufferedInputStream(c.getContentResolver().openInputStream(uri)))){
-            for(ZipEntry e;(e=z.getNextEntry())!=null;){
-                for(Clip clip:Clip.values())if(clip.path.equals(e.getName())||clip.name.equals(e.getName()))
-                    data[clip.ordinal()]=clip.read(z);
-                if(!Arrays.asList(data).contains(null))break;
-            }
-        }
-        if(Arrays.asList(data).contains(null))throw new IOException("未找到两个原版动作，请选动作包或 Quest 原包");
-        for(Clip clip:Clip.values())clip.save(c,data[clip.ordinal()]);
-    }
 }

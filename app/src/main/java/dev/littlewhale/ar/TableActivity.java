@@ -34,27 +34,13 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     private CameraPreviewView camera;
     private TextView status;
     private CharacterView whale;
-    private Button characterMode;
+    private Button characterMode, labs;
     private boolean palmMode;
     private PalmTracking palm;
     private boolean recovering, otherMap;
     private int goodFrames, lastGoodFrame = -1;
     private final ActivityResultLauncher<String[]> pickModel = registerForActivityResult(
         new ActivityResultContracts.OpenDocument(), uri -> { if(uri!=null) CharacterFile.obtain(this,uri); });
-    private final ActivityResultLauncher<String> saveModel = registerForActivityResult(
-        new ActivityResultContracts.CreateDocument("application/octet-stream"), uri -> {
-            if(uri!=null)CharacterFile.exportOriginal(this,uri);
-        });
-    private final ActivityResultLauncher<String[]> pickMotions = registerForActivityResult(
-        new ActivityResultContracts.OpenDocument(), uri -> {
-            if(uri==null)return;
-            new Thread(()->{
-                try{
-                    ReferenceMotions.importFile(getApplicationContext(),uri);
-                    runOnUiThread(()->{if(!isDestroyed()){whale.evaluateJavascript("window.whale?.loadMotions(true)",null);motionToast("提起和走路动作已导入");}});
-                }catch(Exception e){runOnUiThread(()->motionToast("动作导入失败 · "+e.getMessage()));}
-            },"import-vr-motions").start();
-        });
     private void motionToast(String message){android.widget.Toast.makeText(this,message,android.widget.Toast.LENGTH_LONG).show();}
     private Button action;
     private DisplayCorrection correction;
@@ -102,7 +88,13 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
                 insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             return insets;
         });
-        FrameLayout preview = new FrameLayout(this);
+        FrameLayout preview = new FrameLayout(this){
+            @Override protected void onMeasure(int width,int height){
+                super.onMeasure(width,height);
+                whale.measure(MeasureSpec.makeMeasureSpec(camera.getMeasuredWidth(),MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(camera.getMeasuredHeight(),MeasureSpec.EXACTLY));
+            }
+        };
         camera = new CameraPreviewView(this);
         camera.setMenthaAR(engine);
         camera.setDisplayCorrectionListener(value -> {
@@ -117,19 +109,12 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         });
         camera.init();
         whale = new CharacterView(this);
-        whale.setFrameLimit(getPreferences(MODE_PRIVATE).getInt("frameLimit",60));
-        whale.setReferenceWalk(getPreferences(MODE_PRIVATE).getBoolean("referenceWalk",true));
+        whale.importModel=this::pickLocalModel;
         whale.setSize(getPreferences(MODE_PRIVATE).getInt("sizePercent",100));
         whale.setPalmLift(getPreferences(MODE_PRIVATE).getInt("palmLift",50));
         FrameLayout.LayoutParams fit = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         preview.addView(camera, fit);
         preview.addView(whale, new FrameLayout.LayoutParams(1, 1, Gravity.CENTER));
-        camera.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or_,ob) -> {
-            ViewGroup.LayoutParams lp = whale.getLayoutParams();
-            if (lp.width != r-l || lp.height != b-t) {
-                whale.setLayoutParams(new FrameLayout.LayoutParams(r-l,b-t,Gravity.CENTER));
-            }
-        });
         preview.setOnClickListener(v -> camera.autoFocusCenter());
         page.addView(preview, new LinearLayout.LayoutParams(-1, 0, 1));
         LinearLayout bar = new LinearLayout(this);
@@ -148,17 +133,17 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         characterMode.setOnClickListener(v -> chooseMode());
         LinearLayout modesBar=new LinearLayout(this);
         modesBar.addView(characterMode,new LinearLayout.LayoutParams(0,-2,1));
-        Button labs=new Button(this);labs.setText("定位对照");
-        labs.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("定位对照")
+        labs=new Button(this);labs.setText("定位对照");
+        labs.setOnClickListener(v -> {if(palmMode){setPalmMode(false);return;}new AlertDialog.Builder(this).setTitle("定位对照")
             .setItems(new String[]{"原生引擎","参考图","EasyAR","ARCore"}, (dialog, index) -> {
                 if (index == 0) { selectNative(); return; }
                 if (!hasCamera()) { permission.launch(Manifest.permission.CAMERA); return; }
                 if (!CharacterFile.file(this).isFile()) {
-                    motionToast("请先下载或导入小鲸鱼 V21"); chooseMode(); return;
+                    pickLocalModel(); return;
                 }
                 if (index == 2) openEasyAR();
                 else startActivity(new Intent(this, index == 1 ? ImageLabActivity.class : CoreLabActivity.class));
-            }).show());
+            }).show();});
         modesBar.addView(labs);page.addView(modesBar);
         setContentView(page);
         if (!hasCamera() && state == null) permission.launch(Manifest.permission.CAMERA);
@@ -180,26 +165,27 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         updateControls();
     }
 
+    private void pickLocalModel(){
+        if(CharacterFile.busy){motionToast("模型正在导入");return;}
+        pickModel.launch(new String[]{"*/*"});
+    }
     private void chooseMode() {
         boolean installed=CharacterFile.file(this).isFile();
         AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("角色与模式");
         if(installed){
-            String[] modes={"小鲸鱼 V21","角色帧率 · "+whale.frameLimit+" FPS","导出原始 VRM","模型大小 · "+whale.sizePercent+"%",palmMode?"重新选择掌上站位":"绘制活动范围",palmMode?"掌上模式（当前）":"掌上模式","掌上站位微调 · "+whale.palmLift+"%"};
-            int motionIndex=palmMode?7:6;
-            modes=java.util.Arrays.copyOf(modes,motionIndex+2);
-            modes[motionIndex+1]="走路动作 · "+(whale.referenceWalk?"YuChat 原版":"早期 AR 版");
-            modes[motionIndex]="导入提起和走路动作";
+            String[] modes={"导入模型","删除模型","模型大小 · "+whale.sizePercent+"%",palmMode?"重新选择掌上站位":"绘制活动范围","掌上模式","掌上站位微调 · "+whale.palmLift+"%"};
+            if(!palmMode)modes=java.util.Arrays.copyOf(modes,5);
             dialog.setItems(modes,(d,index)->{
-                if(index==motionIndex+1){
-                    new AlertDialog.Builder(this).setTitle("走路动作").setSingleChoiceItems(
-                        new String[]{"YuChat 原版（默认）","早期 AR 版"},whale.referenceWalk?0:1,(choice,i)->{
-                            whale.setReferenceWalk(i==0);
-                            getPreferences(MODE_PRIVATE).edit().putBoolean("referenceWalk",i==0).apply();choice.dismiss();
+                if(index==0){pickLocalModel();return;}
+                if(index==1){
+                    new AlertDialog.Builder(this).setTitle("删除模型？").setMessage("删除应用内的小鲸鱼和纹理缓存。你保存在手机里的原始 VRM 可以再次导入。")
+                        .setNegativeButton("取消",null).setPositiveButton("删除",(confirm,w)->{
+                            if(CharacterFile.remove(this)){setPalmMode(false);recreate();}
+                            else motionToast("模型正在使用或无法删除，请稍后再试");
                         }).show();
                     return;
                 }
-                if(index==motionIndex){pickMotions.launch(new String[]{"*/*"});return;}
-                if(index==6){
+                if(index==5){
                     new AlertDialog.Builder(this).setTitle("掌上站位微调")
                         .setSingleChoiceItems(new String[]{"默认 · 向上移半身","鞋底对准选点"},whale.palmLift==50?0:1,(choice,which)->{
                             whale.setPalmLift(which==0?50:0);
@@ -208,9 +194,9 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
                         }).show();
                     return;
                 }
-                if(index==5){setPalmMode(true);return;}
-                if(index==4){if(palmMode)whale.choosePalmPoint();else whale.editArea();return;}
-                if(index==3){
+                if(index==4){setPalmMode(true);return;}
+                if(index==3){if(palmMode)whale.choosePalmPoint();else whale.editArea();return;}
+                if(index==2){
                     int[] sizes={25,50,75,100,125,150,200};
                     String[] labels=new String[sizes.length];
                     int selected=3;
@@ -225,27 +211,9 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
                     }).show();
                     return;
                 }
-                if(index==1){
-                    new AlertDialog.Builder(this).setTitle("角色渲染帧率上限")
-                        .setSingleChoiceItems(new String[]{"30 FPS","60 FPS"},whale.frameLimit==30?0:1,(choice,which)->{
-                            whale.setFrameLimit(which==0?30:60);
-                            getPreferences(MODE_PRIVATE).edit().putInt("frameLimit",whale.frameLimit).apply();
-                            choice.dismiss();
-                        }).show();
-                    return;
-                }
-                if(index==2){
-                    if(!CharacterFile.exporting)saveModel.launch("SmallBlueFish-V21-AllExpressions-Acceptance.vrm");
-                    return;
-                }
-                selectNative();
-                if(index==0 && "error".equals(whale.state)) recreate();
             });
         }else{
-            dialog.setMessage("小鲸鱼 V21 · 333 MiB，首次获取后可离线使用。模型来自 CF-612，形象参考「这个刀子真甜」，原形象 @ZipZipPipe、@上善无形。个人非商用测试。")
-                .setPositiveButton("作者原址下载",(d,w)->{selectNative();CharacterFile.obtain(this,null);})
-                .setNeutralButton("本机导入",(d,w)->{selectNative();pickModel.launch(new String[]{"*/*"});})
-                .setNegativeButton("取消",null);
+            dialog.setItems(new String[]{"导入模型"},(d,index)->pickLocalModel());
         }
         dialog.show();
     }
@@ -404,7 +372,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             label = "重试"; message = "相机打开失败，请关闭占用相机的应用后重试"; enabled = true;
         } else if (palmMode) {
             enabled=true;
-            label=palm!=null && palm.failed()?"重试手掌识别":"返回桌面";
+            label=palm!=null && palm.failed()?"重试手掌识别":"退出模式";
             message="error".equals(whale.state)?"角色显示失败，请重新载入":
                 !"ready".equals(whale.state)?"正在载入小鲸鱼…":
                 palm==null?"正在启动相机…":palm.status();
@@ -432,11 +400,17 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         if (whale.renderFps>0) message += " · 角色 " + whale.renderFps + " FPS";
         if(!palmMode && firstFix>=0)message+=" · 首次定位 "+firstFix+" ms";
         if(!palmMode && firstPlane>=0)message+=" · 首次可放置 "+firstPlane+" ms";
-        if (CharacterFile.exporting) message += "\n正在导出 VRM " + CharacterFile.exportPercent + "%";
+        labs.setText(palmMode?"退出模式":"定位对照");
+        if(!CharacterFile.file(this).isFile() && !CharacterFile.busy){
+            if(label.equals("放置小鲸鱼"))label="放置方块";
+            if(placed && tracked)message="缺少模型 · 点方块导入";
+        }
+        if(CharacterFile.busy)message="导入模型 "+CharacterFile.percent+"%";
+        else if(CharacterFile.failure!=null)message=CharacterFile.failure;
         if (!message.contentEquals(status.getText())) status.setText(message);
         if (!label.contentEquals(action.getText())) action.setText(label);
         action.setEnabled(enabled);
-        String mode=palmMode?"掌上 · 小鲸鱼 V21   ▾":"原生 · 小鲸鱼 ▾";
+        String mode=palmMode?"掌上 · 小鲸鱼   ▾":"原生 · 小鲸鱼 ▾";
         if(!mode.contentEquals(characterMode.getText()))characterMode.setText(mode);
     }
 

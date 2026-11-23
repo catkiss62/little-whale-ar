@@ -63,8 +63,6 @@ public final class EasyLabActivity extends Activity {
         setContentView(root);
         whale = new CharacterView(this);
         android.content.SharedPreferences prefs = getSharedPreferences("TableActivity", MODE_PRIVATE);
-        whale.setFrameLimit(prefs.getInt("frameLimit", 60));
-        whale.setReferenceWalk(prefs.getBoolean("referenceWalk", true));
         whale.setSize(prefs.getInt("sizePercent", 100));
         root.addView(whale, new FrameLayout.LayoutParams(-1, -1));
         status = new TextView(this);

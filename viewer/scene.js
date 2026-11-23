@@ -1,3 +1,4 @@
+import {MissingCube} from './missing.js';
 import {WhaleSpeech} from './speech.js';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -17,9 +18,9 @@ anchor.matrixAutoUpdate=false;camera.matrixAutoUpdate=false;
 let renderer, root, head, neck, upper, tail, ready=false, shown=false, raf=0, generation=0;
 let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
 const attention=new Attention(),roam=new Roam();
-let voice;
+let voice,missingCube;
 let area,pickup,coin,motions,deskPoseTime=-Infinity;
-let referenceWalk=true;
+
 let awaySince=null,returnedAt=null,lastWave=-Infinity;
 const screenCenter=new THREE.Vector3();
 function observeVisibility(now){
@@ -46,7 +47,7 @@ function resize(){
     renderer.setSize(innerWidth,innerHeight,false);request();
 }
 function request(){if(!raf)raf=requestAnimationFrame(draw);}
-let face, gesture=null, frameLimit=60, nextFrame=0, lastDraw=0, sample=0, count=0;
+let face, gesture=null, nextFrame=0, lastDraw=0, sample=0, count=0;
 let blinkAt=0, tapAt=-Infinity, affection=0, gazeX=0, gazeY=0;
 const angles=new THREE.Euler(), deltaRotation=new THREE.Quaternion(), focus=new THREE.Vector3();
 const headPoint=new THREE.Vector3(), headCenter=new THREE.Vector3(), headTop=new THREE.Vector3();
@@ -56,10 +57,11 @@ const clamp=(v,limit)=>Math.max(-limit,Math.min(limit,v));
 function draw(now){
     raf=0;
     if(!renderer)return;
+    if(missingCube && !document.hidden){missingCube.draw(renderer);return;}
     if(!shown || !ready || document.hidden){renderer.clear();return;}
     request();
     if(now+1<nextFrame)return;
-    const step=1000/frameLimit;
+    const step=1000/60;
     nextFrame=nextFrame && now-nextFrame<step ? nextFrame+step : now+step;
     const dt=lastDraw ? Math.min(.1,(now-lastDraw)/1000) : 0;
     lastDraw=now;
@@ -68,7 +70,7 @@ function draw(now){
         else if(gesture.part!=='held' && (gesture.crown || gesture.tailContact) && !gesture.petting && !gesture.outsideSince && now-gesture.start>=480){
             gesture.part='held';gesture.crown=false;shakeUntil=landedAt=-Infinity;
             pickup.begin(gesture,now);turnStart=-1;
-            window.WhaleHost?.carryState?.(true);voice.say('held');
+            window.WhaleHost?.carryState?.(true);voice.say(gesture.tailContact?'tail':'held');
         }
         if(pickup.source && !gesture?.tailContact && !gesture?.released)pickup.move(gesture,now);
     }
@@ -162,15 +164,10 @@ function draw(now){
         angles.set(pitch,(headYaw+lateYaw)*share,-swayX*touchShare,'YXZ');
         applyRotation(bone,rest,basis,angles);
     }
-    const stride=Math.sin(roam.phase);
     for(const [bone,rest,basis,side,kind] of walkBones){
-        let swing=side*stride;
-        if(kind==='UpperArm')swing*=-.22;
-        else if(kind==='LowerLeg')swing=Math.max(0,-swing)*.48;
-        else swing*=.40;
         const bend=kind==='LowerLeg'?.32:kind==='UpperLeg'?-.16:0;
         const fallback=pickup.source && !motions?.grabbed ? (kind==='LowerLeg'?.56:kind==='UpperLeg'?-.32:-.18):0;
-        angles.set((referenceWalk && motions?.locomotion_walk?0:swing*gait)+impact*bend+fallback,0,0);
+        angles.set(impact*bend+fallback,0,0);
         applyRotation(bone,rest,basis,angles);
     }
     const idle=!toy && !gesture && !pickup.source && !roam.target && !area.editing && turnStart<0 && now-landedAt>500;
@@ -178,7 +175,7 @@ function draw(now){
     const wave=idle && returnedAt!==null && now-returnedAt>=700 && now-returnedAt<3500;
     if(wave){returnedAt=null;lastWave=now;}
     motions?.update(actor,now,pickup.source?(gesture?.tailContact?'tail':'head'):null,roam.phase,
-        referenceWalk?gait:0,dt,idle && !palm.site,roam.turn,wave);
+        gait,dt,idle && !palm.site,roam.turn,wave);
     coin?.animate(motions,now);
     if(coin)coin.button.hidden=!!palm.site || !!area.editing || !!pickup.source || !motions?.kay_pickup || !motions?.ual2_walk_carry_loop;
     if(pickup.source && gesture?.tailContact && !gesture.released)pickup.followTail(gesture);
@@ -200,6 +197,7 @@ function cancelTouch(){
     pickup?.end();gesture=null;blankTouch=null;
 }
 function hide(){
+    if(missingCube?.anchored)missingCube.visible=false;
     voice?.stop();
     if(coin){coin.clear();coin.button.hidden=true;}
     if(shown && !palm.site)awaySince??=performance.now();
@@ -217,6 +215,7 @@ function hide(){
     request();
 }
 function pose(mv,p){
+    if(missingCube){missingCube.pose(mv,p);request();return;}
     if(!renderer||!ready)return;
     const now=performance.now();
     deskPoseTime=now;
@@ -270,6 +269,7 @@ function relaxArms(root,names){
 }
 async function load(){
     if(!renderer)return;
+    missingCube?.dispose();missingCube=null;
     const token=++generation;
     disposeModel();feedback('loading');
     try{
@@ -354,6 +354,7 @@ function blankStart(e){
     blankTouch={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now()};
 }
 function beginTouch(e){
+    if(missingCube){if(e.isPrimary && missingCube.hit(e.clientX,e.clientY))window.WhaleHost?.importModel?.();return;}
     blankTouch=null;
     if(area.editing){area.down(e);return;}
     if(coin?.state==='placing' && e.isPrimary){blankStart(e);return;}
@@ -567,15 +568,14 @@ function setPalmLift(percent){
     if(point)showOnPalm(...point);
 }
 function choosePalmPoint(){palm.reset();hide();}
-function reset(){cancelTouch();palm.reset();roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();awaySince=returnedAt=null;lastWave=-Infinity;}
-function setFrameLimit(value){frameLimit=value===30?30:60;nextFrame=sample=0;}
+function reset(){missingCube?.preview();cancelTouch();palm.reset();roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();awaySince=returnedAt=null;lastWave=-Infinity;}
 function setSize(percent){
     coin?.clear();
     actor.scale.setScalar(Math.max(.25,Math.min(2,percent/100)));
     roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
 }
 function editArea(){if(!shown || !ready)return false;cancelTouch();coin?.clear();area.open();return true;}
-window.whale={stopSpeech:()=>voice?.stop(),setReferenceWalk:on=>{referenceWalk=!!on;},loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,setPalmLift,editArea};
+window.whale={missing:()=>{missingCube??=new MissingCube();request();},syncVoice:()=>voice?.sync(),stopSpeech:()=>voice?.stop(),loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setSize,setPalmLift,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);

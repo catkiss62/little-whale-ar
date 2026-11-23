@@ -31,3 +31,5 @@ window.initFixture=async()=>{
 window.walkActive=()=>roam.manual;
 
 window.speechState=()=>({time:voice.player.currentTime,rate:voice.player.playbackRate,group:voice.group,text:voice.bubble.textContent,visible:!voice.bubble.hidden,pitch:voice.player.preservesPitch});
+
+window.testTailVoice=()=>{voice.stop();voice.next=0;delete voice.last.tail;return voice.say('tail');};

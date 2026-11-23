@@ -6,21 +6,30 @@ const events={
     directed:{group:'walk',include:[1,23]},longWalk:{group:'walk',include:[8,25]},
     nearGoal:{group:'walk',include:[13]},arrived:{group:'walk',include:[29]}
 };
-const rates=[.75,1,1.25,1.5];
+
 export class WhaleSpeech{
     constructor(){
         this.player=new Audio();
-        this.rate=window.WhaleHost?.speechSpeed?.()??-1;
+        this.enabled=window.WhaleHost?.voiceEnabled?.()??true;
         this.bags={};this.last={};this.next=0;this.serial=0;
         this.bubble=document.querySelector('#speech');
-        this.speed=document.querySelector('#voice-speed');
-        this.speed.value=String(this.rate);
-        this.speed.onchange=()=>{
-            this.rate=Number(this.speed.value);
-            window.WhaleHost?.saveSpeechSpeed?.(this.rate);
-            this.player.playbackRate=rates[this.rate+1];
+        const button=document.querySelector('#voice');
+        const refresh=()=>{
+            button.textContent=this.enabled?'语音 · 开':'语音 · 关';
+            button.setAttribute('aria-pressed',String(this.enabled));
         };
-        document.querySelector('#voice-preview').onclick=()=>this.say('held',true);
+        this.sync=()=>{
+            this.enabled=window.WhaleHost?.voiceEnabled?.()??this.enabled;
+            if(!this.enabled)this.stop();
+            refresh();
+        };
+        refresh();
+        button.onclick=()=>{
+            this.enabled=!this.enabled;
+            this.stop();
+            window.WhaleHost?.saveVoiceEnabled?.(this.enabled);
+            refresh();
+        };
         this.library=fetch('voices/lines.json').then(r=>r.json()).catch(()=>null);
         this.player.onended=()=>{
             if(this.line){
@@ -47,10 +56,10 @@ export class WhaleSpeech{
         }
         return this.last[group]=bag.pop();
     }
-    async say(group,preview=false){
+    async say(group){
         const now=performance.now();
-        if(document.hidden || (!preview && (now<this.next || this.line) && !(group==='dizzy' && this.group==='held') && !(events[this.group]?.group==='walk' && ['pet','held','coin','dizzy'].includes(group))))return;
-        if(!preview && this.last[group] && Math.random()<.25)return;
+        if(!this.enabled || document.hidden || ((now<this.next || this.line) && !(group==='dizzy' && ['held','tail'].includes(this.group)) && !(events[this.group]?.group==='walk' && ['pet','held','tail','coin','dizzy'].includes(group))))return;
+        if(this.last[group] && Math.random()<.25)return;
         this.stop();const token=this.serial;
         this.next=now+(group==='idle'?5000:3200);
         try{
@@ -60,14 +69,14 @@ export class WhaleSpeech{
             let items=library[event?.group??group];
             if(event?.include)items=event.include.map(i=>items[i]);
             if(event?.exclude)items=items.filter((_,i)=>!event.exclude.includes(i));
-            const line=preview?library.held[0]:this.pick(group,items);
+            const line=this.pick(group,items);
             const res=await fetch('voices/'+line.id+'.wav');
             if(!res.ok)throw Error();
             const blob=await res.blob();
             if(token!==this.serial)return;
             this.url=URL.createObjectURL(blob);this.player.src=this.url;
             this.player.preservesPitch=true;
-            this.player.playbackRate=rates[this.rate+1];
+
             this.group=group;this.line=line;this.tailUntil=0;
             await this.player.play();
         }catch{if(token===this.serial)this.stop();}
