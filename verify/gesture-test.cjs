@@ -3,8 +3,8 @@ const assert=require('node:assert/strict');
 (async()=>{const b=await chromium.launch({executablePath:process.env.CHROME_BIN,args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader']});
 try{
 const p=await b.newPage({viewport:{width:480,height:640},hasTouch:true});
-const errs=[];p.on('pageerror',e=>errs.push(e.message));
-await p.addInitScript(()=>{window.logs=[];window.WhaleHost={surfaceTap:(...x)=>logs.push(['tap',...x]),carryState:x=>logs.push(['hold',x])}});
+const errs=[];p.on('pageerror',e=>{errs.push(e.message);console.error(e.message)});
+await p.addInitScript(()=>{window.logs=[];window.WhaleHost={status:()=>{},surfaceTap:(...x)=>logs.push(['tap',...x]),carryState:x=>logs.push(['hold',x])}});
 await p.goto('http://127.0.0.1:18811');await p.evaluate(()=>initFixture());
 await p.touchscreen.tap(150,350);assert.equal(await p.evaluate(()=>logs[0][0]),'tap');
 await p.evaluate(()=>{placePose();setInterval(placePose,40)});
