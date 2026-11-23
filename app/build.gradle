@@ -46,9 +46,21 @@ dependencies {
     implementation 'androidx.camera:camera-lifecycle:1.7.0'
 }
 
-// An authorized local build can supply the Community SDK directly.
-def easyAar = file('libs/EasyAR.aar')
-if (easyAar.exists()) {
-    android.sourceSets.main.java.srcDir 'src/easyar/java'
-    dependencies.add('implementation', files(easyAar))
+
+// Provide the extracted official distribution and a package-bound license for full local builds.
+if (project.hasProperty('easyarRoot')) {
+    def root = file(project.property('easyarRoot'))
+    def sdk = new File(root, 'variants/Community/Android/EasyAR.aar')
+    def sample = new File(root, 'samples/Community/Android/HelloARMotionTracking/app/src/main/java')
+    def license = file(project.property('easyarLicense'))
+    def localInputs = layout.buildDirectory.dir('easyar-inputs').get().asFile
+    tasks.register('prepareEasyAR', Sync) {
+        from(sample) { include '**/BoxRenderer.java', '**/BGRenderer.java'; into 'java' }
+        from(license) { rename { 'easyar-license.txt' }; into 'assets' }
+        into localInputs
+    }
+    tasks.named('preBuild') { dependsOn 'prepareEasyAR' }
+    android.sourceSets.main.java.srcDirs 'src/easyar/java', new File(localInputs, 'java')
+    android.sourceSets.main.assets.srcDir new File(localInputs, 'assets')
+    dependencies.add('implementation', files(sdk))
 }

@@ -1,6 +1,8 @@
 # 小鲸鱼 AR 总账
 
 ## 当前接班快照
+**0.13.0+17 EasyAR 双模式对照，已签名验包，待 K80 Ultra。** 「定位对照」新增水平面、轻量表面两个方块入口。水平面要求 EasyAR 自家跟踪正常且水平面射线命中，保存世界落点；轻量表面采用跟踪结果的原点。各自显示首次可放置毫秒，前后台重建会话。普通角色仍用原引擎。Android ARM64 运行库和授权已随交付 APK 内置，参考图、手势与 ARM64 基础构建通过 [Actions](https://github.com/catkiss62/little-whale-ar/actions/runs/45142491420)。完整 APK 在本地编译真实 SDK 适配代码、加入依赖后签名，无需手工导入。终包 SHA-256 `60b9afdda7084400a935f29cbaa7034531d999ed070590bd95551224af8be3cf`，包名 / 版本 / 16K 对齐 / 与 0.12.0 相同证书、DEX 类、原生库和授权逐项通过；未作 K80 实机速度和落点验收。
+**构建复现。** 使用解包后的 EasyAR Sense 4.11.0.12415 Community 原生包及 Android HelloARMotionTracking 的 BGRenderer 和 BoxRenderer。完整 Gradle 构建可指定 `-PeasyarRoot=/absolute/sdk -PeasyarLicense=/absolute/license.txt`；也可对本次 CI 基础 APK 执行 `bash scripts/package-easyar.sh` 的五参数流程，再签名。初次本地 JRE 缺 --release 8 的符号库，改用 source/target 8。单独复制 zipalign 缺 host libc++.so，混用 36 与 37 版出现符号错误，最终用成套 Android build-tools 36 的 zipalign 和对应 lib64，后续 CI 打包工具一并携带相符 lib64。实测入口先选水平面，设备标定仍不可用则单独试轻量表面；同场景比较冷启动、横移和转开返回。稀疏地图未启用。
 **0.13.0 开工。** 已取得 EasyAR Sense 4.11.0 和项目 License，接入水平面与轻量表面对照，在签名前装入 ARM64 运行库和授权。
 **0.12.0+16 已签名交付，K80 待真机。** `f11a382` 移除镜头相对站位，普通角色和方块统一在准星附近有同图桌面锚点时才放置；新增首次可放置耗时。从相机启动计时不同于手动点击后确认延迟。[ARM64 构建、参考图与手势回归](https://github.com/catkiss62/little-whale-ar/actions/runs/45129083675) 均通过，签名与 0.11.0 一致，APK SHA-256 `814167baf5a7a6a9d09a07b37b56d4647ac95e6ec7251e9c740f8022e9d7e546`。加速方案仍处于讨论：EasyAR 原生 4.11.0 官方包下载返回 HTTP 401，缺 dev.littlewhale.ar 的授权。取得官方 SDK 和授权后，在定位对照分别实现运动跟踪＋平面检测及轻量表面跟踪；比较首次稳定、横移漂移和转开恢复。旧引擎测速待真机。
 **0.12.0 开工。** K80 Ultra 反馈临时站位随镜头移动；删除普通模式临时站位，共用真实桌面锚点。对照测试区分首次定位、首次桌面候选。EasyAR 两种跟踪的端侧对照依赖 SDK 和包名授权。

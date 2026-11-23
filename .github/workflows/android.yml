@@ -54,6 +54,7 @@ jobs:
           mkdir -p /tmp/easy-tools
           cp "$ANDROID_HOME"/platforms/android-35/android.jar /tmp/easy-tools/
           cp "$ANDROID_HOME"/build-tools/37.0.0/{lib/d8.jar,zipalign,aapt} /tmp/easy-tools/
+          cp -a "$ANDROID_HOME"/build-tools/37.0.0/lib64 /tmp/easy-tools/
       - uses: actions/upload-artifact@v4
         with:
           name: easyar-packaging-tools
