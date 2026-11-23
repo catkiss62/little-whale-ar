@@ -353,6 +353,14 @@ function walkHere(x,y){
 function blankStart(e){
     blankTouch={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now()};
 }
+function placePalm(x,y){
+    if(!ready || !palm.frame)return;
+    const point=palm.pick(x,y);
+    if(!point)return;
+    showOnPalm(...point);
+    window.WhaleHost?.placedOnPalm?.(palm.site.side===0?'Left':'Right');
+}
+function placePalmCenter(){if(palm.frame)placePalm(palm.frame.cx,palm.frame.cy);}
 function beginTouch(e){
     if(missingCube){if(e.isPrimary && missingCube.hit(e.clientX,e.clientY))window.WhaleHost?.importModel?.();return;}
     blankTouch=null;
@@ -360,11 +368,7 @@ function beginTouch(e){
     if(coin?.state==='placing' && e.isPrimary){blankStart(e);return;}
     if(!shown && ready && e.isPrimary && palm.frame){
         const b=renderer.domElement.getBoundingClientRect();
-        const point=palm.pick((e.clientX-b.left)/b.width,(e.clientY-b.top)/b.height);
-        if(point){
-            showOnPalm(...point);
-            window.WhaleHost?.placedOnPalm?.(palm.site.side===0?'Left':'Right');
-        }
+        placePalm((e.clientX-b.left)/b.width,(e.clientY-b.top)/b.height);
         return;
     }
     if(gesture?.part==='held' && !gesture.tailContact && !gesture.released && !e.isPrimary && !gesture.second){
@@ -575,7 +579,7 @@ function setSize(percent){
     roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
 }
 function editArea(){if(!shown || !ready)return false;cancelTouch();coin?.clear();area.open();return true;}
-window.whale={missing:()=>{missingCube??=new MissingCube();request();},syncVoice:()=>voice?.sync(),stopSpeech:()=>voice?.stop(),loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setSize,setPalmLift,editArea};
+window.whale={placePalmCenter,missing:()=>{missingCube??=new MissingCube();request();},syncVoice:()=>voice?.sync(),stopSpeech:()=>voice?.stop(),loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setSize,setPalmLift,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);

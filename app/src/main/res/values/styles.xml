@@ -1,0 +1,21 @@
+<resources>
+    <style name="WhaleTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#B082FF</item>
+        <item name="android:windowBackground">#16131B</item>
+        <item name="android:statusBarColor">#16131B</item>
+        <item name="android:navigationBarColor">#16131B</item>
+        <item name="android:buttonStyle">@style/WhaleButton</item>
+        <item name="android:alertDialogTheme">@style/WhaleDialog</item>
+    </style>
+    <style name="WhaleButton" parent="@android:style/Widget.Material.Button">
+        <item name="android:backgroundTint">#39313F</item>
+        <item name="android:textColor">#E6D9F4</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+    <style name="WhaleDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#B082FF</item>
+        <item name="android:colorBackground">#25212B</item>
+    </style>
+</resources>

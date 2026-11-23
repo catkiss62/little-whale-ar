@@ -54,7 +54,7 @@ public final class ImageLabActivity extends ComponentActivity {
         page.addView(stage,new LinearLayout.LayoutParams(-1,0,1));
         status=new TextView(this);status.setText("将有纹理的平面正对镜头，填满白框");page.addView(status);
         record=new Button(this);record.setText("记录白框内的参考图");record.setEnabled(false);record.setOnClickListener(v->capture.set(true));page.addView(record);
-        Button back=new Button(this);back.setText("返回现有引擎");back.setOnClickListener(v->finish());page.addView(back);setContentView(page);
+        Button back=new Button(this);back.setText("返回原生模式");back.setOnClickListener(v->finish());page.addView(back);setContentView(page);
         try{System.loadLibrary("MenthaAR_Engine");}catch(UnsatisfiedLinkError e){status.setText("当前设备无法加载参考图识别库");return;}
         worker.execute(()->{Bitmap old=BitmapFactory.decodeFile(saved().toString());if(old!=null){paperAspect=(float)old.getHeight()/old.getWidth();target=registerImage(old);old.recycle();}});
         com.google.common.util.concurrent.ListenableFuture<ProcessCameraProvider> future=ProcessCameraProvider.getInstance(this);

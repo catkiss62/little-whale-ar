@@ -39,6 +39,19 @@ assert.equal(await p.evaluate(()=>speechState().visible),false);
 await p.evaluate(()=>testTailVoice());
 assert.equal(await p.evaluate(()=>speechState().group),null);
 await p.locator('#voice').click();
+await p.evaluate(()=>{
+    clearInterval(window.poseTimer);
+    window.WhaleHost.placedOnPalm=side=>window.placedSide=side;
+    whale.choosePalmPoint();
+    whale.placePalmCenter();
+});
+assert.equal(await p.evaluate(()=>window.placedSide),undefined);
+await p.evaluate(()=>{
+    whale.palmSurface([.4,.4,.5,.35,.6,.4,.6,.6,.5,.65,.4,.6],.2,0,[1,0,0,0,1,0]);
+    whale.placePalmCenter();
+});
+assert.equal(await p.evaluate(()=>window.placedSide),'Left');
+await p.evaluate(()=>whale.choosePalmPoint());
 await p.evaluate(()=>{clearInterval(window.poseTimer);window.WhaleHost.importModel=()=>window.importRequested=true;whale.missing();whale.reset();});
 await p.waitForTimeout(100);
 await p.touchscreen.tap(240,320);await p.waitForFunction(()=>window.importRequested);

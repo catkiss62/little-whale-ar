@@ -116,6 +116,7 @@ final class PalmTracking {
         if(missingSince>0)return "正在找回掌心";
         return view.palmSide==null?"点掌面轮廓内，放置小鲸鱼":"已托住小鲸鱼";
     }
+    boolean canPlace(){return initialized && lock.visible && missingSince==0 && SystemClock.elapsedRealtime()-lastGood<=600;}
     boolean failed(){return failed;}
     synchronized void close(){
         closed=true;ui.removeCallbacks(expire);

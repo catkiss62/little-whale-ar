@@ -82,7 +82,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setBackgroundColor(0xff101d2b);
+        page.setBackgroundColor(0xff16131b);
         page.setOnApplyWindowInsetsListener((v, insets) -> {
             v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
                 insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
@@ -120,18 +120,21 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         int pad = Math.round(12 * getResources().getDisplayMetrics().density);
-        bar.setPadding(pad, pad, pad, pad);
+        bar.setPadding(pad, pad/2, pad, 0);
         status = new TextView(this);
         status.setTextColor(Color.WHITE);
-        status.setTextSize(15);
+        status.setTextSize(14);
+        status.setTextColor(0xffd4cedc);status.setPadding(0,0,pad,0);
         bar.addView(status, new LinearLayout.LayoutParams(0, -2, 1));
         action = new Button(this);
+        action.setBackgroundTintList(new android.content.res.ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},new int[]{0xff36313c,0xffb082ff}));
+        action.setTextColor(0xff21162d);
         action.setOnClickListener(v -> act());
         bar.addView(action);
         page.addView(bar);
         characterMode = new Button(this);
         characterMode.setOnClickListener(v -> chooseMode());
-        LinearLayout modesBar=new LinearLayout(this);
+        LinearLayout modesBar=new LinearLayout(this);modesBar.setPadding(pad,0,pad,pad/2);
         modesBar.addView(characterMode,new LinearLayout.LayoutParams(0,-2,1));
         labs=new Button(this);labs.setText("定位对照");
         labs.setOnClickListener(v -> {if(palmMode){setPalmMode(false);return;}new AlertDialog.Builder(this).setTitle("定位对照")
@@ -144,7 +147,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
                 if (index == 2) openEasyAR();
                 else startActivity(new Intent(this, index == 1 ? ImageLabActivity.class : CoreLabActivity.class));
             }).show();});
-        modesBar.addView(labs);page.addView(modesBar);
+        modesBar.addView(labs,new LinearLayout.LayoutParams(0,-2,1));page.addView(modesBar);
         setContentView(page);
         if (!hasCamera() && state == null) permission.launch(Manifest.permission.CAMERA);
     }
@@ -215,6 +218,10 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         }else{
             dialog.setItems(new String[]{"导入模型"},(d,index)->pickLocalModel());
         }
+        if(!palmMode)dialog.setNeutralButton("定位信息",(d,which)->{
+            String timing="首次定位  "+(firstFix<0?"等待中":firstFix+" ms")+"\n首次可放置  "+(firstPlane<0?"等待中":firstPlane+" ms");
+            new AlertDialog.Builder(this).setTitle("定位信息").setMessage("定位  "+fps+" FPS\n角色  "+whale.renderFps+" FPS\n"+timing).setPositiveButton("关闭",null).show();
+        });
         dialog.show();
     }
 
@@ -250,7 +257,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
                 Uri.parse("package:" + getPackageName())));
         } else if (palmMode && !unavailable) {
             if(palm!=null && palm.failed()){whale.clearPose(false);startPalm();}
-            else setPalmMode(false);
+            else if(whale.palmSide!=null)whale.choosePalmPoint();
+            else if(palm!=null && palm.canPlace())whale.evaluateJavascript("whale.placePalmCenter()",null);
         } else if (placed || unavailable) {
             recreate();
         } else if (!"ready".equals(whale.state)) {
@@ -371,8 +379,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         } else if (unavailable) {
             label = "重试"; message = "相机打开失败，请关闭占用相机的应用后重试"; enabled = true;
         } else if (palmMode) {
-            enabled=true;
-            label=palm!=null && palm.failed()?"重试手掌识别":"退出模式";
+            enabled=palm!=null && (palm.failed() || "ready".equals(whale.state) && (whale.palmSide!=null || palm.canPlace()));
+            label=palm!=null && palm.failed()?"重试识别":whale.palmSide!=null?"重新选点":"放置小鲸鱼";
             message="error".equals(whale.state)?"角色显示失败，请重新载入":
                 !"ready".equals(whale.state)?"正在载入小鲸鱼…":
                 palm==null?"正在启动相机…":palm.status();
@@ -396,10 +404,6 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             enabled = canPlace(now);
             message = enabled ? "桌面已就绪 · 点放置" : "手机已定位 · 正在找桌面，请对准纹理缓慢横移";
         }
-        if (!palmMode && active && fps > 0) message += "\n定位 " + fps + " FPS";
-        if (whale.renderFps>0) message += " · 角色 " + whale.renderFps + " FPS";
-        if(!palmMode && firstFix>=0)message+=" · 首次定位 "+firstFix+" ms";
-        if(!palmMode && firstPlane>=0)message+=" · 首次可放置 "+firstPlane+" ms";
         labs.setText(palmMode?"退出模式":"定位对照");
         if(!CharacterFile.file(this).isFile() && !CharacterFile.busy){
             if(label.equals("放置小鲸鱼"))label="放置方块";

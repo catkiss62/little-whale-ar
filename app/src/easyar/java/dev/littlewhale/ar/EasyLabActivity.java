@@ -67,11 +67,11 @@ public final class EasyLabActivity extends Activity {
         root.addView(whale, new FrameLayout.LayoutParams(-1, -1));
         status = new TextView(this);
         status.setTextColor(Color.WHITE);
-        status.setBackgroundColor(0xcc102030);
+        status.setBackgroundColor(0xee211d27);
         status.setPadding(22, 16, 22, 16);
         android.widget.LinearLayout bar = new android.widget.LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setBackgroundColor(0xcc102030);
+        bar.setBackgroundColor(0xee211d27);
         bar.addView(status, new android.widget.LinearLayout.LayoutParams(0, -2, 1));
         if (whale != null) {
             android.widget.Button area = new android.widget.Button(this);

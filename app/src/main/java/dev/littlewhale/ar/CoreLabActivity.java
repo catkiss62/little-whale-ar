@@ -68,7 +68,7 @@ public final class CoreLabActivity extends Activity {
         mode=new Button(this);mode.setText("水平桌面 · 点击切换深度");mode.setEnabled(false);
         mode.setOnClickListener(v->surface.queueEvent(()->renderer.changeMode()));
         page.addView(mode);
-        Button back=new Button(this);back.setText("返回现有引擎");back.setOnClickListener(v->finish());page.addView(back);
+        Button back=new Button(this);back.setText("返回原生模式");back.setOnClickListener(v->finish());page.addView(back);
         setContentView(page);
     }
     void message(String text){runOnUiThread(()->{if(!isDestroyed())status.setText(text);});}
@@ -98,7 +98,7 @@ public final class CoreLabActivity extends Activity {
             }
             session.resume();renderer.attach(session);running=true;surface.onResume();
             message("ARCore 已启动 · 缓慢横移，对准桌面轻点放置");
-        }catch(Exception e){message("ARCore 未能启动 · "+e.getClass().getSimpleName()+"；可返回现有引擎");}
+        }catch(Exception e){message("ARCore 未能启动 · "+e.getClass().getSimpleName()+"；可返回原生模式");}
     }
     @Override protected void onPause(){
         resumed=false;handler.removeCallbacks(retry);

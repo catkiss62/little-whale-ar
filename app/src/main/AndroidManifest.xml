@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="true"/>
     <queries><package android:name="com.google.ar.core"/></queries>
-    <application android:allowBackup="false" android:label="小鲸鱼 AR" android:icon="@drawable/ic_whale" android:theme="@android:style/Theme.Material.NoActionBar">
+    <application android:allowBackup="false" android:label="小鲸鱼 AR" android:icon="@drawable/ic_whale" android:theme="@style/WhaleTheme">
         <meta-data android:name="com.google.ar.core" android:value="optional"/>
         <activity android:name="dev.littlewhale.ar.EasyLabActivity" android:exported="false" android:screenOrientation="portrait"/>
         <activity android:name="dev.littlewhale.ar.CoreLabActivity" android:exported="false" android:screenOrientation="portrait"/>
