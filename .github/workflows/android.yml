@@ -65,3 +65,23 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq libopencv-calib3d-dev
       - run: bash verify/test-image.sh
+  character-gestures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise blank taps, held animation and release in WebGL
+        run: |
+          set -eu
+          mkdir -p /tmp/ar-gestures/motions
+          cp app/src/main/assets/viewer/index.html /tmp/ar-gestures/
+          curl -fsSL --retry 3 https://github.com/CF-612/YuChat/releases/download/v0.5.1-quest-test/Desktop-SmallBlueFish-Quest.apk -o /tmp/author.apk
+          unzip -jp /tmp/author.apk assets/Motions/local-grab/grabbed.vrma >/tmp/ar-gestures/motions/grabbed.vrma
+          unzip -jp /tmp/author.apk assets/Motions/local-locomotion/locomotion_walk.vrma >/tmp/ar-gestures/motions/locomotion_walk.vrma
+          cd viewer
+          npm ci
+          cat scene.js ../verify/gesture-fixture.js | ./node_modules/.bin/esbuild --loader=js --bundle --outfile=/tmp/ar-gestures/scene.bundle.js
+          cd ..
+          npm install --prefix /tmp/ar-gestures --no-save playwright@1.56.1
+          python3 -m http.server 18811 --directory /tmp/ar-gestures >/tmp/gesture-http.log 2>&1 &
+          export CHROME_BIN=$(command -v google-chrome)
+          NODE_PATH=/tmp/ar-gestures/node_modules node verify/gesture-test.cjs

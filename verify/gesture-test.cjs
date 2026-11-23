@@ -1,0 +1,20 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
+(async()=>{const b=await chromium.launch({executablePath:process.env.CHROME_BIN,args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader']});
+try{
+const p=await b.newPage({viewport:{width:480,height:640},hasTouch:true});
+const errs=[];p.on('pageerror',e=>errs.push(e.message));
+await p.addInitScript(()=>{window.logs=[];window.WhaleHost={surfaceTap:(...x)=>logs.push(['tap',...x]),carryState:x=>logs.push(['hold',x])}});
+await p.goto('http://127.0.0.1:18811');await p.evaluate(()=>initFixture());
+await p.touchscreen.tap(150,350);assert.equal(await p.evaluate(()=>logs[0][0]),'tap');
+await p.evaluate(()=>{placePose();setInterval(placePose,40)});
+const bounds=(await p.evaluate(()=>peek())).bounds;
+const c=await p.context().newCDPSession(p);
+const touch=(type,x,y)=>c.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x,y}]});
+await touch('touchStart',bounds.cx,bounds.cy-4);
+await p.waitForFunction(()=>peek().holding);await p.waitForTimeout(450);
+let held=await p.evaluate(()=>peek());assert(held.angle>.05 && held.y>0 && held.clip>4);
+await touch('touchEnd');await p.waitForFunction(()=>!peek().holding&&peek().landing===0);await p.touchscreen.tap(24,550);
+assert.deepEqual(await p.evaluate(()=>logs.map(x=>x.slice(0,x[0]==='hold'?2:1))),[['tap'],['hold',true],['hold',false],['tap']]);
+assert.equal(errs.length,0);console.log('Blank tap, original hold clip '+held.clip.toFixed(2)+' s, arm rotation '+held.angle.toFixed(2)+' rad, release and next blank tap passed');
+}finally{await b.close()}})().catch(e=>{console.error(e);process.exitCode=1});

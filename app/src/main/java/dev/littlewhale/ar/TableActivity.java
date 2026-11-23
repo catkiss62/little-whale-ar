@@ -91,7 +91,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
                           (.5f-.5f*screenClip[13]/w-tapY)*whale.getHeight())<.035f*Math.min(whale.getWidth(),whale.getHeight());
     }
     private void confirmQuick(){
-        temporary=false;placed=true;anchorMap=pose.mapId;requestTime=0;firstPlacement=0;
+        firstPlacement=temporary?SystemClock.elapsedRealtime()-quickSince:0;
+        temporary=false;placed=true;anchorMap=pose.mapId;requestTime=0;
         whale.pose(pose,correction);
     }
     private boolean nearAim(){
@@ -492,7 +493,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         if (!palmMode && active && fps > 0) message += "\n定位 " + fps + " FPS";
         if (showWhale && whale.renderFps>0) message += " · 角色 " + whale.renderFps + " FPS";
         if(!palmMode && firstFix>=0)message+=" · 首次定位 "+firstFix+" ms";
-        if(!palmMode && firstPlacement>=0)message+=" · 放置 "+firstPlacement+" ms";
+        if(!palmMode && firstPlacement>=0)message+=" · 桌面确认 "+firstPlacement+" ms";
         if (CharacterFile.exporting) message += "\n正在导出 VRM " + CharacterFile.exportPercent + "%";
         if (!message.contentEquals(status.getText())) status.setText(message);
         if (!label.contentEquals(action.getText())) action.setText(label);

@@ -46,7 +46,7 @@ int main(){
     detect();
     // Force a missed canonical match and exercise the recently recognized appearance.
     auto* saved=reinterpret_cast<Target*>(target);
-    cv::Mat original=saved->descriptors;
+    cv::Mat original=saved->descriptors.clone();
     saved->descriptors=cv::Mat::zeros(original.size(),original.type());
     detect();
     for(int i=0;i<17;i++)assert(!Java_dev_littlewhale_ar_ImageLabActivity_locate(&env,nullptr,target,bitmap(blank)));
