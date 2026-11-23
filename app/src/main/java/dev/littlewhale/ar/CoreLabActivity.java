@@ -16,6 +16,7 @@ public final class CoreLabActivity extends Activity {
     private Button mode;
     private CoreLabRenderer renderer;
     private Session session;
+    private boolean resumed, running, requestedInstall;
     private CharacterView whale;
     private final float[] modelView = new float[16], lens = new float[16];
     private boolean hasPose, resetPose, posted;
@@ -38,7 +39,6 @@ public final class CoreLabActivity extends Activity {
         }
         if (!posted) { posted = true; whale.post(display); }
     }
-    private boolean resumed, running, requestedInstall;
     private final android.os.Handler handler=new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable retry=this::start;
     @Override public void onCreate(Bundle state){
