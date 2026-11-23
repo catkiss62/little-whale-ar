@@ -48,6 +48,7 @@ let face, gesture=null, frameLimit=60, nextFrame=0, lastDraw=0, sample=0, count=
 let blinkAt=0, tapAt=-Infinity, affection=0, gazeX=0, gazeY=0;
 const angles=new THREE.Euler(), deltaRotation=new THREE.Quaternion(), focus=new THREE.Vector3();
 const headPoint=new THREE.Vector3(), headCenter=new THREE.Vector3(), headTop=new THREE.Vector3();
+const restHeadScale=new THREE.Vector3(1,1,1);
 let headRadius=0, turnDuration=850;
 const clamp=(v,limit)=>Math.max(-limit,Math.min(limit,v));
 function draw(now){
@@ -134,6 +135,10 @@ function draw(now){
     pickup.updateRipple(now);
     const recoilAge=(now-tapAt)/420;
     const recoil=recoilAge<1?Math.sin(Math.PI*recoilAge)*Math.exp(-2.1*recoilAge):0;
+    // A short, volume-preserving squash followed by a smaller rebound.
+    const jelly=recoilAge>=0 && recoilAge<1 ? Math.sin(3*Math.PI*recoilAge)*Math.exp(-3*recoilAge)*(1-recoilAge) : 0;
+    const height=1-.12*jelly, width=1/Math.sqrt(height);
+    head.scale.set(restHeadScale.x*width,restHeadScale.y*height,restHeadScale.z*width);
     const trail=Math.exp(-dt/.13);swayX*=trail;swayY*=trail;
     const breath=Math.sin(now*.0017);
     for(const [bone,rest,amount,basis] of joints){
@@ -190,6 +195,7 @@ function hide(){
     palm.lose();settleYaw=0;settleStart=-Infinity;
     if(area?.editing)area.cancel();
     roam.pause();gait=0;headYaw=headPitch=0;
+    if(head)head.scale.copy(restHeadScale);
     shown=false; attention.reset(); cancelTouch(); affection=0;tapAt=-Infinity;gazeX=gazeY=0;
     sample=lastDraw=nextFrame=0;
     if(turnStart>=0){actor.rotation.y=targetYaw;turnStart=-1;}
@@ -266,6 +272,7 @@ async function load(){
         head=root.getObjectByName(names.head);neck=root.getObjectByName(names.neck);
         upper=root.getObjectByName(names.chest);
         if(!tail || !head)throw Error('此模型缺少 V21 尾巴或头骨');
+        restHeadScale.copy(head.scale);
         root.updateMatrixWorld(true);
         const box=new THREE.Box3().setFromObject(root);
         const height=box.max.y-box.min.y;
@@ -385,7 +392,7 @@ function moveTouch(e){
         if(Math.hypot(dx,dy)>2 && dt>=0 && dt<150){
             if(dx*(g.shakeX||0)+dy*(g.shakeY||0)<0 && Math.hypot(g.shakeX,g.shakeY)>Math.max(8,g.rx*.22)){
                 g.reversals=(g.reversals||0)+1;g.shakeX=g.shakeY=0;
-                if(g.reversals>=2)shakeUntil=now+3000;
+                if(g.reversals>=8)shakeUntil=now+3000;
             }
             g.shakeX=(g.shakeX||0)+dx;g.shakeY=(g.shakeY||0)+dy;g.shakeAt=now;
         }
@@ -414,6 +421,30 @@ function moveTouch(e){
     if(g.part==='head' && !g.petting && g.distance>=Math.max(4,Math.min(12,g.rx*.16))){
         g.crown=false;g.petting=true;
         window.WhaleHost?.petting?.(true);
+    }
+}
+// Two original reed-like chirps, triggered after the gesture resolves as a tap.
+let toyAudio;
+function playHeadSqueak(){
+    if(!window.AudioContext)return;
+    toyAudio??=new AudioContext();
+    if(toyAudio.state==='suspended')toyAudio.resume().catch(()=>{});
+    const start=toyAudio.currentTime;
+    for(const [delay,from,peak,to,length,volume] of [
+        [0,830,1490,1080,.085,.085],[.074,1140,1420,680,.115,.061]
+    ]){
+        const reed=toyAudio.createOscillator(), gain=toyAudio.createGain();
+        const t=start+delay;
+        reed.type='triangle';
+        reed.frequency.setValueAtTime(from,t);
+        reed.frequency.exponentialRampToValueAtTime(peak,t+length*.32);
+        reed.frequency.exponentialRampToValueAtTime(to,t+length);
+        gain.gain.setValueAtTime(.0001,t);
+        gain.gain.exponentialRampToValueAtTime(volume,t+.009);
+        gain.gain.exponentialRampToValueAtTime(.0001,t+length);
+        reed.connect(gain).connect(toyAudio.destination);
+        reed.onended=()=>{reed.disconnect();gain.disconnect();};
+        reed.start(t);reed.stop(t+length);
     }
 }
 function endTouch(e){
@@ -445,7 +476,7 @@ function endTouch(e){
     if(g?.petting)lidsUntil=performance.now()+450;
     cancelTouch();
     if(!g || g.outsideSince || g.petting || g.distance>Math.max(9,g.rx*.30) || performance.now()-g.start>650)return;
-    if(g.part==='head'){tapAt=performance.now();return;}
+    if(g.part==='head'){tapAt=performance.now();playHeadSqueak();return;}
     eye.set(0,0,0).applyMatrix4(inverse.copy(anchor.matrixWorld).invert()).sub(actor.position);
     turnToCamera(850);
 }
