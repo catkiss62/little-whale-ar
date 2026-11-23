@@ -50,8 +50,8 @@ jobs:
           character=$(find app/build/intermediates/javac -path '*/classes/dev/littlewhale/ar/CharacterView.class' -print -quit)
           test -f "$character"
           jar cf character-api.jar -C "${character%/dev/littlewhale/ar/CharacterView.class}" dev/littlewhale/ar/CharacterView.class
-          cp "$apk" unsigned-candidate-0.20.0-arm64.apk
-          sha256sum unsigned-candidate-0.20.0-arm64.apk
+          cp "$apk" unsigned-candidate-0.21.0-arm64.apk
+          sha256sum unsigned-candidate-0.21.0-arm64.apk
       - name: Collect tools for private SDK packaging
         run: |
           mkdir -p /tmp/easy-tools
@@ -64,9 +64,9 @@ jobs:
           path: /tmp/easy-tools
       - uses: actions/upload-artifact@v4
         with:
-          name: unsigned-candidate-0.20.0-arm64
+          name: unsigned-candidate-0.21.0-arm64
           path: |
-            unsigned-candidate-0.20.0-arm64.apk
+            unsigned-candidate-0.21.0-arm64.apk
             character-api.jar
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -102,3 +102,8 @@ jobs:
           python3 -m http.server 18811 --directory /tmp/ar-gestures >/tmp/gesture-http.log 2>&1 &
           export CHROME_BIN=$(command -v google-chrome)
           NODE_PATH=/tmp/ar-gestures/node_modules node verify/gesture-test.cjs
+          NODE_PATH=/tmp/ar-gestures/node_modules node verify/capture-test.cjs
+          if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; fi
+          ffmpeg -v error -i /tmp/whale-capture-test.mp4 -map 0:v -f null -
+          ffmpeg -v error -i /tmp/whale-capture-test.mp4 -map 0:a -f s16le -ac 1 /tmp/tap.pcm
+          python3 -c "import array; a=array.array('h'); a.frombytes(open('/tmp/tap.pcm','rb').read()); assert max(a)>200, 'recorded tap is silent'"

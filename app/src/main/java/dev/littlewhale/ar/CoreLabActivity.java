@@ -53,7 +53,7 @@ public final class CoreLabActivity extends Activity {
         renderer=new CoreLabRenderer(this);surface.setRenderer(renderer);
         FrameLayout preview = new FrameLayout(this);
         preview.addView(surface);
-        whale = new CharacterView(this);
+        whale = new CharacterView(this);whale.captureFrom(surface);
         android.content.SharedPreferences prefs = getSharedPreferences("TableActivity", MODE_PRIVATE);
         whale.setSize(prefs.getInt("sizePercent", 100));
         whale.setFrameLimit(prefs.getInt("frameLimit", 60));

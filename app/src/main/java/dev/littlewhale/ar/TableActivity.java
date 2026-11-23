@@ -116,7 +116,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             public void onCameraUnavailable(int count) { runOnUiThread(() -> unavailable = true); }
         });
         camera.init();
-        whale = new CharacterView(this);
+        whale = new CharacterView(this);whale.captureFrom(camera);
         whale.setFrameLimit(getPreferences(MODE_PRIVATE).getInt("frameLimit",60));
         whale.setReferenceWalk(getPreferences(MODE_PRIVATE).getBoolean("referenceWalk",true));
         whale.setSize(getPreferences(MODE_PRIVATE).getInt("sizePercent",100));

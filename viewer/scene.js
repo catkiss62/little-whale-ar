@@ -1,3 +1,4 @@
+import {installCapture} from './capture.js';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {prepareCharacter} from './model.js';
@@ -424,10 +425,21 @@ function moveTouch(e){
     }
 }
 // Two original reed-like chirps, triggered after the gesture resolves as a tap.
-let toyAudio;
+let toyAudio,toyOutput;
+function audioBus(){
+    toyAudio??=new AudioContext();
+    if(!toyOutput){toyOutput=toyAudio.createGain();toyOutput.connect(toyAudio.destination);}
+    return toyOutput;
+}
+function recordAudio(){
+    const bus=audioBus(), output=toyAudio.createMediaStreamDestination();
+    bus.connect(output);
+    const track=output.stream.getAudioTracks()[0];
+    return {track,ready:toyAudio.resume(),close:()=>{bus.disconnect(output);track.stop();}};
+}
 function playHeadSqueak(){
     if(!window.AudioContext)return;
-    toyAudio??=new AudioContext();
+    const bus=audioBus();
     if(toyAudio.state==='suspended')toyAudio.resume().catch(()=>{});
     const start=toyAudio.currentTime;
     for(const [delay,from,peak,to,length,volume] of [
@@ -442,7 +454,7 @@ function playHeadSqueak(){
         gain.gain.setValueAtTime(.0001,t);
         gain.gain.exponentialRampToValueAtTime(volume,t+.009);
         gain.gain.exponentialRampToValueAtTime(.0001,t+length);
-        reed.connect(gain).connect(toyAudio.destination);
+        reed.connect(gain).connect(bus);
         reed.onended=()=>{reed.disconnect();gain.disconnect();};
         reed.start(t);reed.stop(t+length);
     }
@@ -569,6 +581,12 @@ try{
     pickup=new Pickup(anchor,camera,actor,roam,area);
     coin=new Coin(anchor,actor,camera,area,roam);
     const canvas=renderer.domElement;
+    whale.pauseCapture=installCapture((ctx,width,height)=>{
+        if(shown && ready){
+            renderer.render(scene,camera);
+            ctx.drawImage(canvas,0,0,width,height);
+        }
+    },recordAudio);
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
     canvas.addEventListener('pointerdown',beginTouch);
     canvas.addEventListener('pointermove',moveTouch);

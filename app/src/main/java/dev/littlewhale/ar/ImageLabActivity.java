@@ -29,18 +29,34 @@ public final class ImageLabActivity extends ComponentActivity {
     private static native long registerImage(Bitmap bitmap);
     private static native float[] locate(long handle,Bitmap bitmap);
     private static native void releaseImage(long handle);
+    private Rect guideBox;
+    private float[] corners;
     private File saved(){return new File(getFilesDir(),"image-test-reference.png");}
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);
         LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);
-        preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        preview=new ImageView(this){
+            @Override protected void onDraw(Canvas canvas){
+                super.onDraw(canvas);
+                Rect box=guideBox;
+                if(box==null)return;
+                canvas.save();canvas.concat(getImageMatrix());
+            paint.setStyle(Paint.Style.STROKE);paint.setColor(0x99ffffff);paint.setStrokeWidth(1.5f);canvas.drawRect(box,paint);
+            if(corners!=null){
+                paint.setColor(0xff51ffd3);paint.setStrokeWidth(3);
+                Path border=new Path();border.moveTo(corners[0],corners[1]);for(int i=1;i<4;i++)border.lineTo(corners[2*i],corners[2*i+1]);
+                border.close();canvas.drawPath(border,paint);canvas.drawCircle(corners[8],corners[9],7,paint);
+            }
+                canvas.restore();
+            }
+        };preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
         page.setOnApplyWindowInsetsListener((v, insets) -> {
             v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
                 insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             return insets;
         });
         FrameLayout stage=new FrameLayout(this);
-        stage.addView(preview);whale=new CharacterView(this);stage.addView(whale);
+        stage.addView(preview);whale=new CharacterView(this);whale.captureFrom(preview);stage.addView(whale);
         whale.setSize(getSharedPreferences("TableActivity",MODE_PRIVATE).getInt("sizePercent",100));
         whale.surfaceTap=(x,y)->{
             if(!foreground || visiblePlane==null)return;
@@ -92,13 +108,7 @@ public final class ImageLabActivity extends ComponentActivity {
                 }else notice="纹理太少 · 换有图案的区域再记录";
                 crop.recycle();
             }
-            float[] p=locate(target,image);Canvas canvas=new Canvas(image);
-            paint.setStyle(Paint.Style.STROKE);paint.setColor(0x99ffffff);paint.setStrokeWidth(1.5f);canvas.drawRect(box,paint);
-            if(p!=null){
-                paint.setColor(0xff51ffd3);paint.setStrokeWidth(3);
-                Path border=new Path();border.moveTo(p[0],p[1]);for(int i=1;i<4;i++)border.lineTo(p[2*i],p[2*i+1]);
-                border.close();canvas.drawPath(border,paint);canvas.drawCircle(p[8],p[9],7,paint);
-            }
+            float[] p=locate(target,image);
             String label=notice!=null?notice:p!=null?"已认出参考图 · 点绿框内任意位置放置小鲸鱼":target==0?"正对书封或图片，让图案填满白框后记录":"寻找已保存的图案 · 对准原图案可重新识别";
             if(notice!=null){lastNotice=label;noticeUntil=android.os.SystemClock.elapsedRealtime()+2300;}
             final String shown=android.os.SystemClock.elapsedRealtime()<noticeUntil?lastNotice:label;
@@ -107,7 +117,7 @@ public final class ImageLabActivity extends ComponentActivity {
             final long id=referenceId;
             image.setDensity(Bitmap.DENSITY_NONE);
             runOnUiThread(()->{try{if(!closed && foreground){
-                preview.setImageBitmap(image);
+                guideBox=box;corners=p;preview.setImageBitmap(image);
                 if(displayedId!=id){contact=null;whale.clearPose(true);displayedId=id;}
                 long now=android.os.SystemClock.elapsedRealtime();
                 if(plane!=null)lastSeen=now;
