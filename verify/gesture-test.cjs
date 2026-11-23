@@ -15,7 +15,7 @@ await touch('touchStart',bounds.cx,bounds.cy-4);
 await p.waitForFunction(()=>peek().holding);await p.waitForTimeout(450);
 let held=await p.evaluate(()=>peek());assert(held.angle>.05 && held.y>0 && held.clip>4);
 await touch('touchEnd');await p.waitForFunction(()=>!peek().holding&&peek().landing===0);await p.touchscreen.tap(24,550);
-assert.deepEqual(await p.evaluate(()=>logs.map(x=>x.slice(0,x[0]==='hold'?2:1))),[['tap'],['hold',true],['hold',false],['tap']]);
+assert.deepEqual(await p.evaluate(()=>logs.map(x=>x.slice(0,x[0]==='hold'?2:1))),[['tap'],['hold',true],['hold',false]]);
 const [tx,ty]=await p.evaluate(()=>tailPixel());
 await touch('touchStart',tx,ty);await p.waitForFunction(()=>peek().holding && tailError()!==null);
 await touch('touchMove',tx+20,ty-15);
@@ -28,5 +28,7 @@ await touch('touchEnd');await p.waitForFunction(()=>!peek().holding);
     await p.waitForFunction(()=>coinState()==='hold');
     await p.locator('#coin-button').click();assert.equal(await p.evaluate(()=>coinState()),null);
 }
+const destination=await p.evaluate(()=>coinPixel());await p.touchscreen.tap(...destination);
+await p.waitForFunction(()=>walkActive());await p.waitForFunction(()=>!walkActive());
 assert.equal(errs.length,0);console.log('Blank tap, original hold clip '+held.clip.toFixed(2)+' s, arm rotation '+held.angle.toFixed(2)+' rad, release and next blank tap passed');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exitCode=1});

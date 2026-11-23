@@ -48,7 +48,7 @@ export function validate(poly,feet,size){
 }
 export class Roam {
     constructor(){this.clear();}
-    pause(seconds=1.6){this.target=null;this.delay=seconds;this.speed=0;}
+    pause(seconds=1.6){this.manual=false;this.target=null;this.delay=seconds;this.speed=0;}
     clear(){this.polygon=[];this.phase=0;this.pause();}
     set(points){
         this.polygon=points.slice();
@@ -64,11 +64,18 @@ export class Roam {
         }
         return null;
     }
+    direct(actor,q){
+        const p=actor.position, size=actor.scale.x;
+        if(!q || distance(p,q)>3*size || distance(p,q)<.025*size)return false;
+        if(this.polygon.length && !clearRoute(this.polygon,p,q,.02*size))return false;
+        this.target=q;this.manual=true;this.delay=0;
+        return true;
+    }
     advance(actor,dt,blocked){
         this.speed=0;this.turn=null;
-        if(!this.polygon.length || blocked || dt<=0)return;
+        if((!this.polygon.length && !this.manual) || blocked || dt<=0)return;
         const p=actor.position,size=actor.scale.x;
-        if(!contains(this.polygon,p))return;
+        if(this.polygon.length && !contains(this.polygon,p))return;
         this.delay-=dt;
         if(this.delay>0)return;
         if(!this.target){
@@ -76,10 +83,10 @@ export class Roam {
             if(!this.target){this.delay=.8;return;}
         }
         const dx=this.target.x-p.x,dz=this.target.z-p.z,remaining=Math.hypot(dx,dz);
+        if(remaining<.006*size){this.pause(1.5+Math.random()*3);return;}
         const diff=Math.atan2(Math.sin(Math.atan2(dx,dz)-actor.rotation.y),Math.cos(Math.atan2(dx,dz)-actor.rotation.y));
         actor.rotation.y+=Math.sign(diff)*Math.min(Math.abs(diff),dt*2.9);
         if(Math.abs(diff)>.22){this.turn=diff>0?'locomotion_left':'locomotion_right';return;}
-        if(remaining<.006*size){this.pause(1.5+Math.random()*3);return;}
         this.speed=Math.min(1,remaining/(.13*size)+.12);
         const step=Math.min(remaining,dt*.31*size*this.speed);
         p.x+=dx/remaining*step;p.z+=dz/remaining*step;

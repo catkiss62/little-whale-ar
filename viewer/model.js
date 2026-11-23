@@ -6,10 +6,16 @@ export function prepareCharacter(doc) {
     const names = {};
     for (const [key, value] of Object.entries(vrm.humanoid.humanBones))
         names[key] = doc.nodes[value.node].name;
-    const channels = ['blink','relaxed','lookLeft','lookRight','lookUp','lookDown'];
-    const targets = new Map(), uvBindings = new Map();
+    const channels = ['blink','relaxed','lookLeft','lookRight','lookUp','lookDown',
+        'eyeCircleShock','eyeSpiral','eyeTroubled','mouthOpenCircle','eyeSmile','mouthSmile','browHappy'];
+    const targets = new Map(), uvBindings = new Map(), colors = new Map();
     for(const channel of channels){
-        const expression=vrm.expressions?.preset?.[channel];
+        const expression=vrm.expressions?.preset?.[channel] ?? vrm.expressions?.custom?.[channel];
+        for(const {material,type,targetValue} of expression?.materialColorBinds || []){
+            if(type!=='color')continue;
+            if(!colors.has(material))colors.set(material,[]);
+            colors.get(material).push({channel,targetValue});
+        }
         for(const {node,index,weight} of expression?.morphTargetBinds || []){
             const mesh=doc.nodes[node].mesh;
             if(!targets.has(mesh))targets.set(mesh,new Map());
@@ -33,7 +39,7 @@ export function prepareCharacter(doc) {
     for (const [i,m] of doc.meshes.entries()) {
         m.primitives=m.primitives.filter(p=>{
             const mat=doc.materials[p.material];
-            return mat?.alphaMode!=='BLEND' || (mat.pbrMetallicRoughness?.baseColorFactor?.[3]??1)>0;
+            return colors.has(p.material) || mat?.alphaMode!=='BLEND' || (mat.pbrMetallicRoughness?.baseColorFactor?.[3]??1)>0;
         });
         if(m.primitives.length){
             const slots=targets.get(i) || new Map();
@@ -116,5 +122,5 @@ export function prepareCharacter(doc) {
     doc.buffers=segments.map(s=>({uri:'bin/'+s.start+'/'+(s.end-s.start),byteLength:s.end-s.start}));
     doc.extensionsUsed=['KHR_materials_unlit']; delete doc.extensionsRequired; delete doc.extensions;
     delete doc.animations;
-    return {doc,names,expressions,uv:materialIds.map(id=>uvBindings.get(id)||[])};
+    return {doc,names,expressions,colors:materialIds.map(id=>colors.get(id)||[]),uv:materialIds.map(id=>uvBindings.get(id)||[])};
 }

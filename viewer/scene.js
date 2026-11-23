@@ -63,7 +63,7 @@ function draw(now){
     if(gesture?.crown || gesture?.tailContact || gesture?.part==='held'){
         if(now-deskPoseTime>1800)cancelTouch();
         else if(gesture.part!=='held' && (gesture.crown || gesture.tailContact) && !gesture.petting && !gesture.outsideSince && now-gesture.start>=480){
-            gesture.part='held';gesture.crown=false;
+            gesture.part='held';gesture.crown=false;shakeUntil=landedAt=-Infinity;
             pickup.begin(gesture,now);turnStart=-1;
             window.WhaleHost?.carryState?.(true);
         }
@@ -125,7 +125,12 @@ function draw(now){
     const impactAge=(now-landedAt-180)/220;
     const impact=impactAge>0 && impactAge<1?Math.sin(Math.PI*impactAge):0;
     const eyelids=now<lidsUntil?Math.min(1,(lidsUntil-now)/280):0;
-    face.apply(Math.max(blink,tap*.75,affection*.74,eyelids*.55,impact*.3,now<shakeUntil?.4:0),affection,gazeX,gazeY);
+    const fallAge=now-landedAt;
+    const held=!!pickup.source || fallAge<180;
+    const dizzy=held && now<shakeUntil;
+    const squeeze=(fallAge>=180 && fallAge<680) || (held && now>=shakeUntil && now<shakeUntil+500);
+    face.apply(Math.max(blink,tap*.75,eyelids*.55),affection,gazeX,gazeY,held,dizzy,squeeze,now-tapAt<420);
+    updateWalkMarker(now);
     const recoilAge=(now-tapAt)/420;
     const recoil=recoilAge<1?Math.sin(Math.PI*recoilAge)*Math.exp(-2.1*recoilAge):0;
     const trail=Math.exp(-dt/.13);swayX*=trail;swayY*=trail;
@@ -177,7 +182,7 @@ function cancelTouch(){
 function hide(){
     if(coin){coin.clear();coin.button.hidden=true;}
     if(shown && !palm.site)awaySince??=performance.now();
-    returnedAt=null;
+    returnedAt=null;shakeUntil=landedAt=-Infinity;if(walkMarker)walkMarker.visible=false;
     deskPoseTime=-Infinity;motions?.reset();swayX=swayY=0;lidsUntil=-Infinity;
     if(landingHeight && root)root.position.y=standingY;
     landingHeight=0;
@@ -248,14 +253,13 @@ async function load(){
     try{
         const response=await fetch('model.json',{cache:'no-store'});
         if(!response.ok)throw Error('找不到模型');
-        const {doc,names,expressions,uv}=prepareCharacter(await response.json());
+        const {doc,names,expressions,uv,colors}=prepareCharacter(await response.json());
         const gltf=await new GLTFLoader().parseAsync(JSON.stringify(doc),location.href.replace(/[^/]*$/,''));
         if(token!==generation)return;
         root=gltf.scene;
-        face=new Face(root,gltf.parser,expressions,uv);
+        face=new Face(root,gltf.parser,expressions,uv,colors);
         root.traverse(o=>{if(o.isMesh){
             o.frustumCulled=false;
-            if(o.material.opacity===0 && o.material.transparent)o.visible=false;
         }});
         tail=root.getObjectByName('WhaleTail');
         head=root.getObjectByName(names.head);neck=root.getObjectByName(names.neck);
@@ -308,7 +312,21 @@ function headBounds(){
 function insideHead(x,y,b,margin=1){
     return Math.hypot((x-b.cx)/b.rx,(y-b.cy)/b.ry)<=margin;
 }
-let blankTouch=null, shakeUntil=0;
+let blankTouch=null, shakeUntil=-Infinity;
+let walkMarker, ripple, walkAt=0;
+function updateWalkMarker(now){
+    if(!walkMarker)return;
+    walkMarker.visible=roam.manual && !palm.site;
+    if(!walkMarker.visible)return;
+    const t=Math.min(1,(now-walkAt)/650);
+    ripple.scale.setScalar(1+1.7*t);ripple.material.opacity=.62*(1-t);
+}
+function walkHere(x,y){
+    if(!roam.direct(actor,area.project(x,y)))return;
+    turnStart=-1;walkAt=performance.now();
+    walkMarker.position.set(roam.target.x,.006*actor.scale.x,roam.target.z);
+    walkMarker.scale.setScalar(.08*actor.scale.x);
+}
 function blankStart(e){
     blankTouch={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now()};
 }
@@ -361,7 +379,15 @@ function moveTouch(e){
     if(g.id!==e.pointerId)return;
     if(g.part==='held'){
         const now=performance.now(), dt=now-(g.lastMove??now);
-        if(dt>0 && dt<100 && Math.hypot(e.clientX-g.x,e.clientY-g.y)>Math.max(9,dt*.8))shakeUntil=now+330;
+        const dx=e.clientX-g.x,dy=e.clientY-g.y;
+        if(now-(g.shakeAt??0)>420){g.shakeX=g.shakeY=0;g.reversals=0;}
+        if(Math.hypot(dx,dy)>2 && dt>=0 && dt<150){
+            if(dx*(g.shakeX||0)+dy*(g.shakeY||0)<0 && Math.hypot(g.shakeX,g.shakeY)>Math.max(8,g.rx*.22)){
+                g.reversals=(g.reversals||0)+1;g.shakeX=g.shakeY=0;
+                if(g.reversals>=2)shakeUntil=now+3000;
+            }
+            g.shakeX=(g.shakeX||0)+dx;g.shakeY=(g.shakeY||0)+dy;g.shakeAt=now;
+        }
         g.lastMove=now;g.x=e.clientX;g.y=e.clientY;return;
     }
     if(g.part==='tail' && Math.hypot(e.clientX-g.x,e.clientY-g.y)+g.distance>9)g.tailContact=null;
@@ -394,7 +420,8 @@ function endTouch(e){
         const p=blankTouch;blankTouch=null;
         if(performance.now()-p.time<420 && Math.hypot(e.clientX-p.x,e.clientY-p.y)<9)
             if(coin?.state==='placing')coin.place(e.clientX,e.clientY);
-            else window.WhaleHost?.surfaceTap?.(e.clientX/innerWidth,e.clientY/innerHeight);
+            else if(shown && !palm.site && !coin?.state)walkHere(e.clientX,e.clientY);
+            else if(!shown)window.WhaleHost?.surfaceTap?.(e.clientX/innerWidth,e.clientY/innerHeight);
         return;
     }
     if(area.editing){area.up(e);return;}
@@ -503,6 +530,9 @@ try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);
     document.body.appendChild(renderer.domElement);
+    walkMarker=new THREE.Mesh(new THREE.RingGeometry(.89,1,48),new THREE.MeshBasicMaterial({color:0x8ce7ed,transparent:true,opacity:.82,depthWrite:false,side:THREE.DoubleSide}));
+    walkMarker.rotation.x=-Math.PI/2;walkMarker.visible=false;
+    ripple=new THREE.Mesh(walkMarker.geometry,walkMarker.material.clone());walkMarker.add(ripple);anchor.add(walkMarker);
     area=new AreaEditor(anchor,camera,actor,roam);
     pickup=new Pickup(anchor,camera,actor,roam,area);
     coin=new Coin(anchor,actor,camera,area,roam);

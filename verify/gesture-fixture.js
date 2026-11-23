@@ -27,3 +27,5 @@ window.initFixture=async()=>{
     motions.ual2_walk_carry_loop??=motions.locomotion_walk;
     window.peek=()=>({clip:motions.grabbed.duration,angle:root.getObjectByName('leftUpperArm').quaternion.angleTo(new THREE.Quaternion()),holding:motions.holding,y:actor.position.y,landing:landingHeight,bounds:headBounds()});
 };
+
+window.walkActive=()=>roam.manual;
