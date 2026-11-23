@@ -23,6 +23,7 @@ public final class ImageLabActivity extends ComponentActivity {
     private float paperAspect=1;
     private boolean foreground;
     private final float[] projection=new float[16];
+    private long lastSeen;
     private long referenceId, displayedId;
     private ImageAnalysis analysis;private long target;private volatile boolean closed;
     private static native long registerImage(Bitmap bitmap);
@@ -41,17 +42,15 @@ public final class ImageLabActivity extends ComponentActivity {
         FrameLayout stage=new FrameLayout(this);
         stage.addView(preview);whale=new CharacterView(this);stage.addView(whale);
         whale.setSize(getSharedPreferences("TableActivity",MODE_PRIVATE).getInt("sizePercent",100));
-        whale.setOnTouchListener((v,event)->{
-            if(event.getAction()==android.view.MotionEvent.ACTION_UP && visiblePlane!=null){
-                Matrix inv=new Matrix();
-                if(preview.getImageMatrix().invert(inv)){
-                    float[] xy={event.getX(),event.getY()};inv.mapPoints(xy);
-                    float[] uv=visiblePlane.pick(xy[0],xy[1]);
-                    if(uv!=null){contact=uv;whale.clearPose(true);}
-                }
+        whale.surfaceTap=(x,y)->{
+            if(!foreground || visiblePlane==null)return;
+            Matrix inv=new Matrix();
+            if(preview.getImageMatrix().invert(inv)){
+                float[] xy={x*preview.getWidth(),y*preview.getHeight()};inv.mapPoints(xy);
+                float[] uv=visiblePlane.pick(xy[0],xy[1]);
+                if(uv!=null){contact=uv;whale.clearPose(true);}
             }
-            return true;
-        });
+        };
         page.addView(stage,new LinearLayout.LayoutParams(-1,0,1));
         status=new TextView(this);status.setText("将有纹理的平面正对镜头，填满白框");page.addView(status);
         record=new Button(this);record.setText("记录白框内的参考图");record.setEnabled(false);record.setOnClickListener(v->capture.set(true));page.addView(record);
@@ -110,6 +109,8 @@ public final class ImageLabActivity extends ComponentActivity {
             runOnUiThread(()->{try{if(!closed && foreground){
                 preview.setImageBitmap(image);
                 if(displayedId!=id){contact=null;whale.clearPose(true);displayedId=id;}
+                long now=android.os.SystemClock.elapsedRealtime();
+                if(plane!=null)lastSeen=now;
                 visiblePlane=plane;
                 String message=shown;
                 if(plane!=null && contact!=null){
@@ -124,7 +125,8 @@ public final class ImageLabActivity extends ComponentActivity {
                         message="ready".equals(whale.state)?"已放置 · 点绿框可换位置":
                             CharacterFile.file(this).isFile()?"正在载入小鲸鱼":"请先回主界面导入小鲸鱼模型";
                     }else whale.clearPose(false);
-                }else whale.clearPose(false);
+                }else if(contact==null || now-lastSeen>240)whale.clearPose(false);
+                else message="正在续接参考图";
                 if(!message.contentEquals(status.getText()))status.setText(message);
             }}finally{awaitDisplay.set(false);}});
         }catch(RuntimeException e){runOnUiThread(()->{if(!closed){visiblePlane=null;whale.clearPose(false);status.setText("参考图帧不可用 · "+e.getClass().getSimpleName());}});awaitDisplay.set(false);}

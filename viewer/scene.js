@@ -52,6 +52,7 @@ function draw(now){
         else if(gesture.crown && !gesture.petting && !gesture.outsideSince && now-gesture.start>=480){
             gesture.part='held';gesture.crown=false;
             pickup.begin(gesture,now);turnStart=-1;
+            window.WhaleHost?.carryState?.(true);
         }
         if(pickup.source && !gesture.released)pickup.move(gesture,now);
     }
@@ -104,8 +105,10 @@ function draw(now){
     if(now>blinkAt+200)blinkAt=now+2200+Math.random()*2800;
     const blink=Math.max(0,1-Math.abs(now-blinkAt-90)/90);
     const tap=Math.max(0,1-(now-tapAt)/650);
+    const impactAge=(now-landedAt-180)/220;
+    const impact=impactAge>0 && impactAge<1?Math.sin(Math.PI*impactAge):0;
     const eyelids=now<lidsUntil?Math.min(1,(lidsUntil-now)/280):0;
-    face.apply(Math.max(blink,tap*.75,affection*.74,eyelids*.55),affection,gazeX,gazeY);
+    face.apply(Math.max(blink,tap*.75,affection*.74,eyelids*.55,impact*.3,now<shakeUntil?.4:0),affection,gazeX,gazeY);
     const recoilAge=(now-tapAt)/420;
     const recoil=recoilAge<1?Math.sin(Math.PI*recoilAge)*Math.exp(-2.1*recoilAge):0;
     const trail=Math.exp(-dt/.13);swayX*=trail;swayY*=trail;
@@ -124,7 +127,9 @@ function draw(now){
         if(kind==='UpperArm')swing*=-.22;
         else if(kind==='LowerLeg')swing=Math.max(0,-swing)*.48;
         else swing*=.40;
-        angles.set(referenceWalk && motions?.locomotion_walk?0:swing*gait,0,0);
+        const bend=kind==='LowerLeg'?.32:kind==='UpperLeg'?-.16:0;
+        const fallback=pickup.source && !motions?.grabbed ? (kind==='LowerLeg'?.56:kind==='UpperLeg'?-.32:-.18):0;
+        angles.set((referenceWalk && motions?.locomotion_walk?0:swing*gait)+impact*bend+fallback,0,0);
         applyRotation(bone,rest,basis,angles);
     }
     motions?.update(actor,now,!!pickup.source,roam.phase,referenceWalk?gait:0);
@@ -142,7 +147,8 @@ function applyRotation(bone,rest,basis,angles){
 }
 function cancelTouch(){
     if(gesture?.petting)window.WhaleHost?.petting?.(false);
-    pickup?.end();gesture=null;
+    if(gesture?.part==='held')window.WhaleHost?.carryState?.(false);
+    pickup?.end();gesture=null;blankTouch=null;
 }
 function hide(){
     deskPoseTime=-Infinity;motions?.reset();swayX=swayY=0;lidsUntil=-Infinity;
@@ -275,7 +281,12 @@ function headBounds(){
 function insideHead(x,y,b,margin=1){
     return Math.hypot((x-b.cx)/b.rx,(y-b.cy)/b.ry)<=margin;
 }
+let blankTouch=null, shakeUntil=0;
+function blankStart(e){
+    blankTouch={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now()};
+}
 function beginTouch(e){
+    blankTouch=null;
     if(area.editing){area.down(e);return;}
     if(!shown && ready && e.isPrimary && palm.frame){
         const b=renderer.domElement.getBoundingClientRect();
@@ -291,6 +302,7 @@ function beginTouch(e){
         gesture.second={id:e.pointerId,x:e.clientX,y:e.clientY};pickup.plane(gesture);
         e.currentTarget.setPointerCapture(e.pointerId);return;
     }
+    if(!shown && ready && e.isPrimary && !palm.frame){blankStart(e);return;}
     if(!shown || !ready || gesture || !e.isPrimary)return;
     const bounds=renderer.domElement.getBoundingClientRect();
     pointer.set((e.clientX-bounds.left)/bounds.width*2-1,1-(e.clientY-bounds.top)/bounds.height*2);
@@ -303,19 +315,24 @@ function beginTouch(e){
     let obj=hit?.object;
     while(obj && obj!==tail)obj=obj.parent;
     const part=obj?'tail':insideHead(e.clientX,e.clientY,b) && (hit || b.rx<=18)?'head':null;
-    if(!part)return;
+    if(!part){if(!hit)blankStart(e);return;}
     gesture={...b,id:e.pointerId,part,x:e.clientX,y:e.clientY,start:performance.now(),distance:0,outsideSince:0,petting:false};
     gesture.crown=part==='head' && !palm.site && e.clientY<=b.cy+.06*b.ry;
     roam.pause(2.5);attention.since=null;
     renderer.domElement.setPointerCapture(e.pointerId);
 }
 function moveTouch(e){
+    if(blankTouch && Math.hypot(e.clientX-blankTouch.x,e.clientY-blankTouch.y)>9)blankTouch=null;
     if(area.editing){area.move(e);return;}
     const g=gesture;
     if(!g || g.released)return;
     if(g.second?.id===e.pointerId){g.second.x=e.clientX;g.second.y=e.clientY;return;}
     if(g.id!==e.pointerId)return;
-    if(g.part==='held'){g.x=e.clientX;g.y=e.clientY;return;}
+    if(g.part==='held'){
+        const now=performance.now(), dt=now-(g.lastMove??now);
+        if(dt>0 && dt<100 && Math.hypot(e.clientX-g.x,e.clientY-g.y)>Math.max(9,dt*.8))shakeUntil=now+330;
+        g.lastMove=now;g.x=e.clientX;g.y=e.clientY;return;
+    }
     if(g.part==='head'){
         Object.assign(g,headBounds());
         if(!insideHead(e.clientX,e.clientY,g,1.23)){
@@ -341,6 +358,12 @@ function moveTouch(e){
     }
 }
 function endTouch(e){
+    if(blankTouch?.id===e.pointerId){
+        const p=blankTouch;blankTouch=null;
+        if(performance.now()-p.time<420 && Math.hypot(e.clientX-p.x,e.clientY-p.y)<9)
+            window.WhaleHost?.surfaceTap?.(e.clientX/innerWidth,e.clientY/innerHeight);
+        return;
+    }
     if(area.editing){area.up(e);return;}
     if(gesture?.second?.id===e.pointerId){
         if(gesture.released)return;
@@ -455,6 +478,7 @@ try{
     canvas.addEventListener('pointerup',endTouch);
     for(const event of ['pointercancel','lostpointercapture'])
         canvas.addEventListener(event,e=>{
+            if(blankTouch?.id===e.pointerId)blankTouch=null;
             if(area.editing && area.id===e.pointerId)area.fail('触摸中断，请重新画一圈');
             if((gesture?.id===e.pointerId || gesture?.second?.id===e.pointerId) && (event==='pointercancel' || !gesture.released))cancelTouch();
         });

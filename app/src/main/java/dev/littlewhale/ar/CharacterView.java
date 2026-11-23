@@ -17,6 +17,9 @@ final class CharacterView extends WebView {
     private final float[] mv=new float[16], projection=new float[16];
     private float scale;
     private boolean page, pending, visiblePose, disposed, started;
+    interface SurfaceTap { void tap(float x,float y); }
+    SurfaceTap surfaceTap;
+    boolean carrying,hasCarried;
     boolean referenceWalk=true;
     boolean beingPetted;
     String palmSide;
@@ -32,6 +35,10 @@ final class CharacterView extends WebView {
         getSettings().setAllowFileAccess(false);
         setWebChromeClient(new WebChromeClient());
         addJavascriptInterface(new Object(){
+            @JavascriptInterface public void surfaceTap(float x,float y){post(()->{
+                if(!disposed && surfaceTap!=null && x>=0 && x<=1 && y>=0 && y<=1)surfaceTap.tap(x,y);
+            });}
+            @JavascriptInterface public void carryState(boolean held){post(()->{carrying=held;if(held)hasCarried=true;});}
             @JavascriptInterface public void motionError(){post(()->{if(!disposed)android.widget.Toast.makeText(getContext(),"动作下载未完成，可在角色与模式中导入动作包",android.widget.Toast.LENGTH_LONG).show();});}
             @JavascriptInterface public void petting(boolean on){post(()->beingPetted=on && visiblePose && !disposed);}
             @JavascriptInterface public void reportFps(int value){post(()->{if(visiblePose && !disposed)renderFps=value;});}
@@ -100,7 +107,7 @@ final class CharacterView extends WebView {
     }
     void clearPose(boolean reset){
         latestPalm=null;
-        if(reset)palmSide=null;
+        if(reset){palmSide=null;hasCarried=false;carrying=false;}
         if(!visiblePose&&!reset)return;
         visiblePose=false;beingPetted=false;renderFps=0;if(reset)scale=0;
         if(page&&!disposed)evaluateJavascript(reset?"whale.reset()":"whale.hide()",null);

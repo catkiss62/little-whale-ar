@@ -63,6 +63,37 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     private float[] priorPlane;
     private int candidateMap=-1,requestedMap=-1;
     private final float[] modelView=new float[16], clipPlane=new float[16];
+    private boolean temporary;
+    private float tapX,tapY;
+    private long quickSince;
+    private final float[] quickMatrix=new float[16],quickLens=new float[16],screenClip=new float[16];
+    private void quickPlace(float x,float y){
+        if(!active || unavailable || palmMode || placed || !showWhale || !"ready".equals(whale.state))return;
+        temporary=true;tapX=x;tapY=y;quickSince=SystemClock.elapsedRealtime();
+        requestTime=0;whale.clearPose(true);renderQuick();updateControls();
+    }
+    private void renderQuick(){
+        int w=whale.getWidth(),h=whale.getHeight();
+        if(w<1 || h<1)return;
+        android.opengl.Matrix.perspectiveM(quickLens,0,48,(float)w/h,.01f,100);
+        android.opengl.Matrix.setIdentityM(quickMatrix,0);
+        android.opengl.Matrix.translateM(quickMatrix,0,(2*tapX-1)/quickLens[0],(1-2*tapY)/quickLens[5],-1);
+        android.opengl.Matrix.rotateM(quickMatrix,0,18,1,0,0);
+        android.opengl.Matrix.scaleM(quickMatrix,0,.34f,.34f,.34f);
+        whale.referencePose(quickMatrix,quickLens);
+    }
+    private boolean quickAligned(){
+        android.opengl.Matrix.multiplyMM(modelView,0,pose.view,0,pose.model,0);
+        android.opengl.Matrix.multiplyMM(clipPlane,0,pose.projection,0,modelView,0);
+        android.opengl.Matrix.multiplyMM(screenClip,0,correction.getNdcTransform(),0,clipPlane,0);
+        float w=screenClip[15];if(w<=0)return false;
+        return Math.hypot((.5f+.5f*screenClip[12]/w-tapX)*whale.getWidth(),
+                          (.5f-.5f*screenClip[13]/w-tapY)*whale.getHeight())<.035f*Math.min(whale.getWidth(),whale.getHeight());
+    }
+    private void confirmQuick(){
+        temporary=false;placed=true;anchorMap=pose.mapId;requestTime=0;firstPlacement=0;
+        whale.pose(pose,correction);
+    }
     private boolean nearAim(){
         android.opengl.Matrix.multiplyMM(modelView,0,pose.view,0,pose.model,0);
         android.opengl.Matrix.multiplyMM(clipPlane,0,pose.projection,0,modelView,0);
@@ -118,6 +149,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         camera.init();
         cube = new CubeOverlay(this);
         whale = new CharacterView(this);
+        whale.surfaceTap=(x,y)->{if(!temporary)quickPlace(x,y);};
         whale.setFrameLimit(getPreferences(MODE_PRIVATE).getInt("frameLimit",60));
         whale.setReferenceWalk(getPreferences(MODE_PRIVATE).getBoolean("referenceWalk",true));
         whale.setSize(getPreferences(MODE_PRIVATE).getInt("sizePercent",100));
@@ -168,6 +200,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
 
     private void switchMode(boolean character) {
         if(palmMode)setPalmMode(false);
+        if(temporary){temporary=false;whale.clearPose(true);}
         showWhale=character;
         getPreferences(MODE_PRIVATE).edit().putBoolean("character",character).apply();
         cube.clear(false); whale.clearPose(false);
@@ -283,6 +316,12 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             recreate();
         } else if (showWhale && !"ready".equals(whale.state)) {
             chooseMode();
+        } else if(showWhale && !placed){
+            if(!temporary && tracked && candidateMap>=0 && correction!=null && SystemClock.elapsedRealtime()-lastCandidate<=250)confirmQuick();
+            else if(!temporary)quickPlace(.5f,.68f);
+            else if(candidateMap>=0 && tracked && correction!=null && SystemClock.elapsedRealtime()-lastCandidate<=250 && !whale.carrying){
+                whale.clearPose(true);confirmQuick();
+            }else{temporary=false;whale.clearPose(true);}
         } else if (tracked && requestTime == 0) {
             placementFailed = false;
             requestTime = SystemClock.elapsedRealtime();
@@ -299,7 +338,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     }
 
     private void resetAnchor() {
-        sessionStart=SystemClock.elapsedRealtime();firstFix=firstPlacement=-1;
+        temporary=false;sessionStart=SystemClock.elapsedRealtime();firstFix=firstPlacement=-1;
         planeRequest=lastCandidate=0;candidateMap=requestedMap=-1;
         requestTime = 0; placed = false; tracked = false; anchorMap = -1;
         placementFailed = false;
@@ -339,7 +378,7 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     }
 
     @Override public void onReady() { runOnUiThread(this::updateControls); }
-    @Override public void onDisconnected() { runOnUiThread(() -> { if(!palmMode && !engine.isConnected())resetAnchor(); updateControls(); }); }
+    @Override public void onDisconnected() { runOnUiThread(() -> { if(!palmMode && !engine.isConnected() && !temporary)resetAnchor(); updateControls(); }); }
     @Override public void onTrackingResult() {
         if (!active || palmMode || !engine.readResult(pose)) return;
         long now = SystemClock.elapsedRealtime();
@@ -363,6 +402,11 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             if(tracked && requestTime==0 && !valid && now-planeRequest>=1400){
                 camera.requestPlaneDetection();planeRequest=now;
             }
+        }
+        if(temporary){
+            if(candidateMap>=0 && now-quickSince>300 && !whale.carrying && !whale.hasCarried && quickAligned())confirmQuick();
+            else renderQuick();
+            return;
         }
         otherMap = placed && tracked && pose.mapId != anchorMap;
         if (!tracked || otherMap || !pose.drawable || correction == null) { losePose(); return; }
@@ -400,8 +444,9 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         if(showWhale) whale.startIfAvailable();
         long now = SystemClock.elapsedRealtime();
         if (!palmMode && (lastResult == 0 || now - lastResult > 1200)) {
-            tracked = false; fps = 0; losePose();
+            tracked = false; candidateMap=-1;fps = 0;if(!temporary)losePose();
         }
+        if(temporary)renderQuick();
         boolean timedOut = requestTime != 0 && now - requestTime > 3500;
         if (timedOut) { requestTime = 0; placementFailed = true; }
         String label = showWhale ? "放置小鲸鱼" : "放置方块", message;
@@ -416,6 +461,12 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             message="error".equals(whale.state)?"角色显示失败，请重新载入":
                 !"ready".equals(whale.state)?"正在载入小鲸鱼…":
                 palm==null?"正在启动相机…":palm.status();
+        } else if(showWhale && "ready".equals(whale.state) && !placed){
+            enabled=true;
+            if(temporary){
+                label=candidateMap>=0?"对齐桌面":"重新选点";
+                message=candidateMap>=0?"已找到桌面 · 可确认对齐":"已临时放置 · 可以互动，后台定位中";
+            }else{label="立即放置";message="点画面选站位，或点按钮放在前方";}
         } else if (!engine.isConnected()) {
             label = "重连"; message = "正在连接定位引擎"; enabled = active;
         } else if (showWhale && !"ready".equals(whale.state)) {
