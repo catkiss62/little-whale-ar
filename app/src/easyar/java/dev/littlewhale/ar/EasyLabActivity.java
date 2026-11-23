@@ -26,6 +26,33 @@ public final class EasyLabActivity extends Activity {
     private CalibrationDownloader calibration;
     private boolean initialized, resumed, surface;
     private long started;
+    private CharacterView whale;
+    private final float[] model = new float[16], projection = new float[16];
+    private boolean visible, posted;
+    private String trackingStatus = "";
+    private final Runnable deliver = () -> {
+        synchronized (this) {
+            posted = false;
+            if (!resumed || whale == null) return;
+            updateStatus();
+            if (visible) whale.referencePose(model, projection);
+            else whale.clearPose(false);
+        }
+    };
+
+    synchronized void frame(float[] mv, float[] lens) {
+        if (whale == null) return;
+        visible = mv != null;
+        if (visible) {
+            System.arraycopy(mv, 0, model, 0, 16);
+            System.arraycopy(lens, 0, projection, 0, 16);
+        }
+        if (!posted) {
+            posted = true;
+            root.post(deliver);
+        }
+    }
+
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -39,6 +66,14 @@ public final class EasyLabActivity extends Activity {
             return insets;
         });
         setContentView(root);
+        if (getIntent().getBooleanExtra("character", false)) {
+            whale = new CharacterView(this);
+            android.content.SharedPreferences prefs = getSharedPreferences("TableActivity", MODE_PRIVATE);
+            whale.setFrameLimit(prefs.getInt("frameLimit", 60));
+            whale.setReferenceWalk(prefs.getBoolean("referenceWalk", true));
+            whale.setSize(prefs.getInt("sizePercent", 100));
+            root.addView(whale, new FrameLayout.LayoutParams(-1, -1));
+        }
         status = new TextView(this);
         status.setTextColor(Color.WHITE);
         status.setBackgroundColor(0xcc102030);
@@ -52,14 +87,21 @@ public final class EasyLabActivity extends Activity {
         }
     }
 
-    private void show(String text) { status.setText((surface ? "轻量表面" : "水平面") + " · " + text); }
+    private void show(String text) { trackingStatus = text; updateStatus(); }
+
+    private void updateStatus() {
+        String text = (surface ? "轻量表面" : "水平面") + " · " + trackingStatus;
+        if (whale != null && !"ready".equals(whale.state))
+            text += "error".equals(whale.state) ? " · 角色载入失败" : " · 正在载入小鲸鱼";
+        if (!text.contentEquals(status.getText())) status.setText(text);
+    }
 
     private void openView() {
         if (!resumed || view != null || isFinishing()) return;
         view = new GLSurfaceView(this);
         view.setEGLContextClientVersion(3);
         view.setEGLConfigChooser(8, 8, 8, 8, 16, 0);
-        session = new EasyLabSession(this, surface, started);
+        session = new EasyLabSession(this, surface, whale != null, started);
         view.setRenderer(session);
         root.addView(view, 0, new FrameLayout.LayoutParams(-1, -1));
         TextView aim = new TextView(this);
@@ -76,6 +118,7 @@ public final class EasyLabActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        if (whale != null) whale.onResume();
         if (!initialized) return;
         started = SystemClock.elapsedRealtime();
         Engine.onResume();
@@ -102,11 +145,18 @@ public final class EasyLabActivity extends Activity {
             view.queueEvent(session::close);
             view.onPause();
         }
+        if (whale != null) {
+            root.removeCallbacks(deliver);
+            synchronized (this) { posted = visible = false; }
+            whale.clearPose(true);
+            whale.onPause();
+        }
         if (initialized) Engine.onPause();
         super.onPause();
     }
 
     @Override protected void onDestroy() {
+        if (whale != null) { root.removeView(whale); whale.close(); }
         if (calibration != null) calibration.dispose();
         super.onDestroy();
     }

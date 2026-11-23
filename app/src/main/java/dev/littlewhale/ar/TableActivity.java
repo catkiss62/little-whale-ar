@@ -157,14 +157,20 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         modesBar.addView(characterMode,new LinearLayout.LayoutParams(0,-2,1));
         Button labs=new Button(this);labs.setText("定位对照");
         labs.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("空间定位对照")
-            .setItems(new String[]{"当前引擎 · 原生方块","ARCore · 桌面与深度方块","参考图 · 书封或图片","EasyAR · 水平面方块","EasyAR · 轻量表面方块"},(d,i)->{
+            .setItems(new String[]{"当前引擎 · 原生方块","ARCore · 桌面与深度方块","参考图 · 书封或图片","EasyAR · 水平面小鲸鱼","EasyAR · 轻量表面小鲸鱼","EasyAR · 水平面方块","EasyAR · 轻量表面方块"},(d,i)->{
                 if(i==0)switchMode(false);
                 else if(!hasCamera())permission.launch(Manifest.permission.CAMERA);
                 else if(i>=3){
+                    boolean character = i < 5;
+                    if (character && !CharacterFile.file(this).isFile()) {
+                        motionToast("请先下载或导入小鲸鱼 V21");
+                        chooseMode();
+                        return;
+                    }
                     String lab="dev.littlewhale.ar.EasyLabActivity";
                     try {
                         Class.forName(lab,false,getClassLoader());
-                        startActivity(new Intent().setClassName(this,lab).putExtra("surface",i==4));
+                        startActivity(new Intent().setClassName(this,lab).putExtra("surface",i==4 || i==6).putExtra("character",character));
                     } catch(ClassNotFoundException missingSdk){
                         motionToast("此构建未包含 EasyAR，请安装已签名测试版");
                     }

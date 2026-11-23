@@ -11,17 +11,19 @@ base=$(realpath "$4")
 destination=$(realpath -m "$5")
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+character_api="$(dirname "$base")/character-api.jar"
+test -f "$character_api"
 cd "$work"
 mkdir classes dex
 aar="$sdk/variants/Community/Android/EasyAR.aar"
 sample="$sdk/samples/Community/Android/HelloARMotionTracking/app/src/main/java/cn/easyar/samples/helloarmotiontracking"
 unzip -p "$aar" classes.jar > easyar.jar
 java -m jdk.compiler/com.sun.tools.javac.Main -source 8 -target 8 -encoding UTF-8 -d classes \
-  -cp "$tools/android.jar:easyar.jar" "$sample/BGRenderer.java" "$sample/BoxRenderer.java" \
+  -cp "$tools/android.jar:easyar.jar:$character_api" "$sample/BGRenderer.java" "$sample/BoxRenderer.java" \
   "$repo"/app/src/easyar/java/dev/littlewhale/ar/*.java
 java -m jdk.jartool/sun.tools.jar.Main cf adapter.jar -C classes .
 java -cp "$tools/d8.jar" com.android.tools.r8.D8 --release --min-api 29 --lib "$tools/android.jar" \
-  --output dex adapter.jar easyar.jar
+  --classpath "$character_api" --output dex adapter.jar easyar.jar
 unzip -p "$aar" jni/arm64-v8a/libEasyAR.so > libEasyAR.so
 cp "$base" merged.apk
 python3 - "$license" <<'PY'

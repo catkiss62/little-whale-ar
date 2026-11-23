@@ -16,6 +16,10 @@ import cn.easyar.samples.helloarmotiontracking.BoxRenderer;
 final class EasyLabSession implements GLSurfaceView.Renderer {
     private final EasyLabActivity activity;
     private final boolean surfaceMode;
+    private final boolean character;
+    private final float[] model = new float[16], lens = new float[16];
+    private float characterHeight;
+    private long lastCameraFrame;
     private volatile long started;
     private OutputFrameBuffer output;
     private InputFrameThrottler throttler;
@@ -35,9 +39,10 @@ final class EasyLabSession implements GLSurfaceView.Renderer {
     private final Vec3F size;
     private final Matrix44F view = new Matrix44F();
 
-    EasyLabSession(EasyLabActivity activity, boolean surfaceMode, long started) {
+    EasyLabSession(EasyLabActivity activity, boolean surfaceMode, boolean character, long started) {
         this.activity = activity;
         this.surfaceMode = surfaceMode;
+        this.character = character;
         this.started = started;
         float side = surfaceMode ? .35f : .08f;
         view.data = new float[16];
@@ -50,10 +55,12 @@ final class EasyLabSession implements GLSurfaceView.Renderer {
         first = -1;
         lastIndex = -1;
         anchor = null;
+        characterHeight = 0;
+        lastCameraFrame = 0;
         status = "";
         try {
             background = new BGRenderer();
-            cube = new BoxRenderer();
+            if (!character) cube = new BoxRenderer();
             output = OutputFrameBuffer.create();
             if (surfaceMode) {
                 camera = CameraDeviceSelector.createCameraDevice(CameraDevicePreference.PreferSurfaceTracking);
@@ -91,6 +98,8 @@ final class EasyLabSession implements GLSurfaceView.Renderer {
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT | GLES30.GL_DEPTH_BUFFER_BIT);
         if (!running || height == 0) return;
         OutputFrame frame = output.peek();
+        long now = SystemClock.elapsedRealtime();
+        if (character && now - lastCameraFrame > 600) activity.frame(null, null);
         if (frame == null) return;
         InputFrame input = null;
         CameraParameters params = null;
@@ -113,8 +122,10 @@ final class EasyLabSession implements GLSurfaceView.Renderer {
                     background.upload(image.format(), image.width(), image.height(), image.pixelWidth(), image.pixelHeight(), pixels);
                 } finally { buf.dispose(); }
                 lastIndex = input.index();
+                lastCameraFrame = now;
             }
             background.render(params.imageProjection(aspect, rotation, true, false));
+            if (character && now - lastCameraFrame > 600) return;
             Matrix44F pose = null;
             if (surfaceMode) {
                 for (FrameFilterResult result : frame.results()) {
@@ -134,14 +145,23 @@ final class EasyLabSession implements GLSurfaceView.Renderer {
                 // then multiply the view by a world-space translation on its right.
                 System.arraycopy(inverse, 0, view.data, 0, 16);
                 float x = surfaceMode ? 0 : anchor.data[0];
-                float y = (surfaceMode ? 0 : anchor.data[1]) + size.data[1] / 2;
+                float y = (surfaceMode ? 0 : anchor.data[1]) + (character ? 0 : size.data[1] / 2);
                 float z = surfaceMode ? 0 : anchor.data[2];
                 for (int i = 0; i < 16; i += 4)
                     view.data[i+3] += inverse[i]*x + inverse[i+1]*y + inverse[i+2]*z;
-                cube.render(params.projection(.01f, 500, aspect, rotation, true, false), view, size);
+                Matrix44F projection = params.projection(.01f, 500, aspect, rotation, true, false);
+                if (character) {
+                    Matrix.transposeM(model, 0, view.data, 0);
+                    Matrix.transposeM(lens, 0, projection.data, 0);
+                    if (characterHeight == 0 && model[14] < 0) characterHeight = -model[14] * .34f;
+                    if (characterHeight <= 0) { activity.frame(null, null); return; }
+                    Matrix.scaleM(model, 0, characterHeight, characterHeight, characterHeight);
+                    activity.frame(model, lens);
+                } else cube.render(projection, view, size);
                 if (first < 0) first = SystemClock.elapsedRealtime() - started;
-                report("首次可放置 " + first + " ms · 横移检查底角");
+                report("首次可放置 " + first + (character ? " ms · 横移观察脚底" : " ms · 横移检查底角"));
             } else {
+                if (character) activity.frame(null, null);
                 report(first < 0 ? "对准桌面，缓慢横移" : "跟踪中断 · 首次可放置 " + first + " ms");
             }
         } catch (RuntimeException e) {
@@ -161,6 +181,7 @@ final class EasyLabSession implements GLSurfaceView.Renderer {
 
     void close() {
         running = false;
+        if (character) activity.frame(null, null);
         if (motion != null) { motion.stop(); motion.close(); motion.dispose(); motion = null; }
         if (camera != null) { camera.stop(); camera.close(); camera.dispose(); camera = null; }
         if (surface != null) { surface.stop(); surface.dispose(); surface = null; }
