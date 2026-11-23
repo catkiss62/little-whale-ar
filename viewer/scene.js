@@ -17,6 +17,18 @@ let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
 const attention=new Attention(),roam=new Roam();
 let area,pickup,motions,deskPoseTime=-Infinity;
 let referenceWalk=true;
+let awaySince=null,returnedAt=null,lastWave=-Infinity;
+const screenCenter=new THREE.Vector3();
+function observeVisibility(now){
+    actor.updateWorldMatrix(true,false);
+    screenCenter.set(0,.5,0).applyMatrix4(actor.matrixWorld).project(camera);
+    const visible=Math.abs(screenCenter.x)<1 && Math.abs(screenCenter.y)<1 && Math.abs(screenCenter.z)<1;
+    if(!visible){awaySince??=now;returnedAt=null;}
+    else if(awaySince!==null){
+        if(now-awaySince>=4500 && now-lastWave>=20000)returnedAt=now;
+        awaySince=null;
+    }
+}
 let swayX=0,swayY=0,lidsUntil=-Infinity;
 let landedAt=-Infinity,landingHeight=0,standingY=0;
 const palm=new PalmSurface();
@@ -47,14 +59,14 @@ function draw(now){
     nextFrame=nextFrame && now-nextFrame<step ? nextFrame+step : now+step;
     const dt=lastDraw ? Math.min(.1,(now-lastDraw)/1000) : 0;
     lastDraw=now;
-    if(gesture?.crown || gesture?.part==='held'){
+    if(gesture?.crown || gesture?.tailContact || gesture?.part==='held'){
         if(now-deskPoseTime>1800)cancelTouch();
-        else if(gesture.crown && !gesture.petting && !gesture.outsideSince && now-gesture.start>=480){
+        else if(gesture.part!=='held' && (gesture.crown || gesture.tailContact) && !gesture.petting && !gesture.outsideSince && now-gesture.start>=480){
             gesture.part='held';gesture.crown=false;
             pickup.begin(gesture,now);turnStart=-1;
             window.WhaleHost?.carryState?.(true);
         }
-        if(pickup.source && !gesture.released)pickup.move(gesture,now);
+        if(pickup.source && !gesture?.tailContact && !gesture?.released)pickup.move(gesture,now);
     }
     motions?.restore();
     if(landingHeight){
@@ -134,7 +146,12 @@ function draw(now){
         angles.set((referenceWalk && motions?.locomotion_walk?0:swing*gait)+impact*bend+fallback,0,0);
         applyRotation(bone,rest,basis,angles);
     }
-    motions?.update(actor,now,!!pickup.source,roam.phase,referenceWalk?gait:0);
+    const idle=!gesture && !pickup.source && !roam.target && !area.editing && turnStart<0 && now-landedAt>500;
+    const wave=idle && returnedAt!==null && now-returnedAt>=700 && now-returnedAt<3500;
+    if(wave){returnedAt=null;lastWave=now;}
+    motions?.update(actor,now,pickup.source?(gesture?.tailContact?'tail':'head'):null,roam.phase,
+        referenceWalk?gait:0,dt,idle && !palm.site,roam.turn,wave);
+    if(pickup.source && gesture?.tailContact && !gesture.released)pickup.followTail(gesture);
     renderer.render(scene,camera);
     if(!sample){sample=now;count=0;}
     else if(++count && now-sample>=1000){
@@ -153,6 +170,8 @@ function cancelTouch(){
     pickup?.end();gesture=null;blankTouch=null;
 }
 function hide(){
+    if(shown && !palm.site)awaySince??=performance.now();
+    returnedAt=null;
     deskPoseTime=-Infinity;motions?.reset();swayX=swayY=0;lidsUntil=-Infinity;
     if(landingHeight && root)root.position.y=standingY;
     landingHeight=0;
@@ -174,7 +193,7 @@ function pose(mv,p){
         if(now-gesture.released<=1500){
             pickup.move(gesture,now);
             if(pickup.target){
-                landingHeight=actor.position.y/actor.scale.y;landedAt=now;
+                landingHeight=Math.max(0,actor.position.y/actor.scale.y);landedAt=now;
             }
             pickup.end(true);
         }
@@ -187,7 +206,7 @@ function pose(mv,p){
     }else if(attention.stationaryBehind(performance.now(),eye,actor.rotation.y,!!gesture || area.editing || !!roam.target || turnStart>=0)){
         roam.pause(2.5);turnToCamera(1300);
     }
-    shown=true;request();
+    observeVisibility(now);shown=true;request();
 }
 function disposeModel(){
     ready=false;hide();walkBones.length=0;joints.length=0;turnStart=-1;actor.rotation.y=0;
@@ -299,7 +318,7 @@ function beginTouch(e){
         }
         return;
     }
-    if(gesture?.part==='held' && !gesture.released && !e.isPrimary && !gesture.second){
+    if(gesture?.part==='held' && !gesture.tailContact && !gesture.released && !e.isPrimary && !gesture.second){
         pickup.move(gesture,performance.now());
         gesture.second={id:e.pointerId,x:e.clientX,y:e.clientY};pickup.plane(gesture);
         e.currentTarget.setPointerCapture(e.pointerId);return;
@@ -319,6 +338,7 @@ function beginTouch(e){
     const part=obj?'tail':insideHead(e.clientX,e.clientY,b) && (hit || b.rx<=18)?'head':null;
     if(!part){if(!hit)blankStart(e);return;}
     gesture={...b,id:e.pointerId,part,x:e.clientX,y:e.clientY,start:performance.now(),distance:0,outsideSince:0,petting:false};
+    if(part==='tail' && !palm.site && motions?.jitabata)gesture.tailContact=pickup.tailContact(hit);
     gesture.crown=part==='head' && !palm.site && e.clientY<=b.cy+.06*b.ry;
     roam.pause(2.5);attention.since=null;
     renderer.domElement.setPointerCapture(e.pointerId);
@@ -335,6 +355,7 @@ function moveTouch(e){
         if(dt>0 && dt<100 && Math.hypot(e.clientX-g.x,e.clientY-g.y)>Math.max(9,dt*.8))shakeUntil=now+330;
         g.lastMove=now;g.x=e.clientX;g.y=e.clientY;return;
     }
+    if(g.part==='tail' && Math.hypot(e.clientX-g.x,e.clientY-g.y)+g.distance>9)g.tailContact=null;
     if(g.part==='head'){
         Object.assign(g,headBounds());
         if(!insideHead(e.clientX,e.clientY,g,1.23)){
@@ -459,7 +480,7 @@ function setPalmLift(percent){
     if(point)showOnPalm(...point);
 }
 function choosePalmPoint(){palm.reset();hide();}
-function reset(){cancelTouch();palm.reset();roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();}
+function reset(){cancelTouch();palm.reset();roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();awaySince=returnedAt=null;lastWave=-Infinity;}
 function setFrameLimit(value){frameLimit=value===30?30:60;nextFrame=sample=0;}
 function setSize(percent){
     actor.scale.setScalar(Math.max(.25,Math.min(2,percent/100)));

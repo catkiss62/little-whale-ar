@@ -65,7 +65,7 @@ export class Roam {
         return null;
     }
     advance(actor,dt,blocked){
-        this.speed=0;
+        this.speed=0;this.turn=null;
         if(!this.polygon.length || blocked || dt<=0)return;
         const p=actor.position,size=actor.scale.x;
         if(!contains(this.polygon,p))return;
@@ -78,7 +78,7 @@ export class Roam {
         const dx=this.target.x-p.x,dz=this.target.z-p.z,remaining=Math.hypot(dx,dz);
         const diff=Math.atan2(Math.sin(Math.atan2(dx,dz)-actor.rotation.y),Math.cos(Math.atan2(dx,dz)-actor.rotation.y));
         actor.rotation.y+=Math.sign(diff)*Math.min(Math.abs(diff),dt*2.9);
-        if(Math.abs(diff)>.22)return;
+        if(Math.abs(diff)>.22){this.turn=diff>0?'locomotion_left':'locomotion_right';return;}
         if(remaining<.006*size){this.pause(1.5+Math.random()*3);return;}
         this.speed=Math.min(1,remaining/(.13*size)+.12);
         const step=Math.min(remaining,dt*.31*size*this.speed);

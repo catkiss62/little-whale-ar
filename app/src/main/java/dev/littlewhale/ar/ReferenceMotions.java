@@ -52,6 +52,9 @@ final class ReferenceMotions {
         }
     }
     static InputStream open(Context c,String name)throws Exception{
+        if(!name.matches("[A-Za-z0-9_]+\\.vrma"))throw new FileNotFoundException(name);
+        try { return c.getAssets().open("motions/"+name); }
+        catch(FileNotFoundException missingBundledClip) { /* Older test builds use the import cache. */ }
         for(Clip clip:Clip.values())if(clip.name.equals(name)){
             if(!clip.file(c).isFile())clip.download(c);
             return new FileInputStream(clip.file(c));

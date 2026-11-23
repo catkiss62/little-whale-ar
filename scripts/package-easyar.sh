@@ -26,9 +26,9 @@ java -cp "$tools/d8.jar" com.android.tools.r8.D8 --release --min-api 29 --lib "$
   --classpath "$character_api" --output dex adapter.jar easyar.jar
 unzip -p "$aar" jni/arm64-v8a/libEasyAR.so > libEasyAR.so
 cp "$base" merged.apk
-python3 - "$license" <<'PY'
+python3 - "$license" "$(dirname "$base")/motions" "$repo/docs/yuchat-motion-files.tsv" <<'PY'
 from pathlib import Path
-import re, sys, zipfile
+import csv, hashlib, re, sys, zipfile
 with zipfile.ZipFile('merged.apk', 'a') as apk:
     names = set(apk.namelist())
     assert 'assets/easyar-license.txt' not in names
@@ -39,6 +39,17 @@ with zipfile.ZipFile('merged.apk', 'a') as apk:
         number += 1
     apk.write('libEasyAR.so', 'lib/arm64-v8a/libEasyAR.so', zipfile.ZIP_STORED)
     apk.write(sys.argv[1], 'assets/easyar-license.txt', zipfile.ZIP_DEFLATED)
+    with open(sys.argv[3], encoding='utf-8') as inventory:
+        digests = {row['动作 ID']: row['SHA-256'] for row in csv.DictReader(inventory, delimiter='\t')}
+    selected = """grabbed jitabata locomotion_walk locomotion_left locomotion_right
+        idle_normal_both_550 kay_idle_a ual2_idle_foldarms_loop hands_back_reserved_both_560
+        tilt_reserved_head_616 calm_reserved_both_729 think_reserved_both_643
+        sigh_reserved_both_696 wave_normal_right_661""".split()
+    for name in selected:
+        clip = Path(sys.argv[2]) / (name + '.vrma')
+        if hashlib.sha256(clip.read_bytes()).hexdigest() != digests[name]:
+            raise ValueError(f'动作校验失败 {name}')
+        apk.write(clip, 'assets/motions/' + clip.name, zipfile.ZIP_DEFLATED)
 PY
 "$tools/zipalign" -f -P 16 4 merged.apk "$destination"
 "$tools/zipalign" -c -P 16 4 "$destination"

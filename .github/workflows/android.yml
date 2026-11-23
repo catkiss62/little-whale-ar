@@ -50,8 +50,8 @@ jobs:
           character=$(find app/build/intermediates/javac -path '*/classes/dev/littlewhale/ar/CharacterView.class' -print -quit)
           test -f "$character"
           jar cf character-api.jar -C "${character%/dev/littlewhale/ar/CharacterView.class}" dev/littlewhale/ar/CharacterView.class
-          cp "$apk" unsigned-candidate-0.16.0-arm64.apk
-          sha256sum unsigned-candidate-0.16.0-arm64.apk
+          cp "$apk" unsigned-candidate-0.17.0-arm64.apk
+          sha256sum unsigned-candidate-0.17.0-arm64.apk
       - name: Collect tools for private SDK packaging
         run: |
           mkdir -p /tmp/easy-tools
@@ -64,9 +64,9 @@ jobs:
           path: /tmp/easy-tools
       - uses: actions/upload-artifact@v4
         with:
-          name: unsigned-candidate-0.16.0-arm64
+          name: unsigned-candidate-0.17.0-arm64
           path: |
-            unsigned-candidate-0.16.0-arm64.apk
+            unsigned-candidate-0.17.0-arm64.apk
             character-api.jar
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -92,6 +92,8 @@ jobs:
           curl -fsSL --retry 3 https://github.com/CF-612/YuChat/releases/download/v0.5.1-quest-test/Desktop-SmallBlueFish-Quest.apk -o /tmp/author.apk
           unzip -jp /tmp/author.apk assets/Motions/local-grab/grabbed.vrma >/tmp/ar-gestures/motions/grabbed.vrma
           unzip -jp /tmp/author.apk assets/Motions/local-locomotion/locomotion_walk.vrma >/tmp/ar-gestures/motions/locomotion_walk.vrma
+          unzip -jo /tmp/author.apk 'assets/Motions/local-lingchat/*.vrma' 'assets/Motions/local-locomotion/*.vrma' -d /tmp/ar-gestures/motions >/dev/null
+          curl -fsSL --retry 3 https://raw.githubusercontent.com/CF-612/YuChat/c3e1896c11d6d1fa19bc2ec762d7bd0ce490ae5b/LingChat-XR/Assets/StreamingAssets/Motions/local-grab/jitabata.vrma -o /tmp/ar-gestures/motions/jitabata.vrma
           cd viewer
           npm ci
           cat scene.js ../verify/gesture-fixture.js | ./node_modules/.bin/esbuild --loader=js --bundle --outfile=/tmp/ar-gestures/scene.bundle.js
