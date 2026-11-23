@@ -78,7 +78,17 @@ public final class EasyLabActivity extends Activity {
         status.setTextColor(Color.WHITE);
         status.setBackgroundColor(0xcc102030);
         status.setPadding(22, 16, 22, 16);
-        root.addView(status, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+        android.widget.LinearLayout bar = new android.widget.LinearLayout(this);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setBackgroundColor(0xcc102030);
+        bar.addView(status, new android.widget.LinearLayout.LayoutParams(0, -2, 1));
+        if (whale != null) {
+            android.widget.Button area = new android.widget.Button(this);
+            area.setText("活动范围");
+            area.setOnClickListener(v -> whale.editArea());
+            bar.addView(area);
+        }
+        root.addView(bar, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
         try (BufferedReader in = new BufferedReader(new InputStreamReader(getAssets().open("easyar-license.txt"), "UTF-8"))) {
             initialized = Engine.initialize(this, in.readLine().trim());
             if (!initialized) show("授权初始化失败 · " + Engine.errorMessage());

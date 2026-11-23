@@ -81,8 +81,10 @@ function draw(now){
     head.getWorldPosition(headPoint);
     const direction=actor.worldToLocal(focus.set(0,0,0)).sub(actor.worldToLocal(headPoint));
     const horizontal=Math.hypot(direction.x,direction.z);
-    const yaw=Math.atan2(direction.x,direction.z);
-    const pitch=Math.atan2(direction.y,horizontal);
+    // During a walking route the neutral head pose looks along the actor's local +Z.
+    const walking = roam.target !== null && !gesture && !area.editing;
+    const yaw=walking ? 0 : Math.atan2(direction.x,direction.z);
+    const pitch=walking ? 0 : Math.atan2(direction.y,horizontal);
     // Ease sideways gaze back to center directly behind or overhead.
     const sideWeight=Math.min(1,(Math.PI-Math.abs(yaw))/(Math.PI/2)) *
         Math.min(1,4*horizontal/Math.max(direction.length(),1e-6));
