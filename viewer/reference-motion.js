@@ -45,7 +45,7 @@ function getClip(name){
 const stances=['idle_normal_both_550','kay_idle_a','ual2_idle_foldarms_loop'];
 const gestures=['hands_back_reserved_both_560','tilt_reserved_head_616','calm_reserved_both_729',
     'think_reserved_both_643','sigh_reserved_both_696'];
-const extras=[...stances,...gestures,'jitabata','locomotion_left','locomotion_right','wave_normal_right_661'];
+const extras=['kay_pickup','ual2_walk_carry_loop',...stances,...gestures,'jitabata','locomotion_left','locomotion_right','wave_normal_right_661'];
 const standingBone=/chest|spine|neck|head|shoulder|arm|hand|thumb|index|middle|ring|little/i;
 function another(list,last){
     const choices=list.filter(name=>name!==last);

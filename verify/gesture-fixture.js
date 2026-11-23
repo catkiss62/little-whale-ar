@@ -20,5 +20,10 @@ window.initFixture=async()=>{
         c.mesh.localToWorld(v).project(camera);
         return Math.hypot((1+v.x)*innerWidth/2-gesture.x,(1-v.y)*innerHeight/2-gesture.y);
     };
+    window.coinPixel=()=>{const v=new THREE.Vector3(.30,0,.40);anchor.localToWorld(v).project(camera);return [(1+v.x)*innerWidth/2,(1-v.y)*innerHeight/2];};
+    window.coinState=()=>coin.state;
+    // Public CI exercises the interaction with stand-in clips when optional source packs are absent.
+    motions.kay_pickup??=motions.grabbed;
+    motions.ual2_walk_carry_loop??=motions.locomotion_walk;
     window.peek=()=>({clip:motions.grabbed.duration,angle:root.getObjectByName('leftUpperArm').quaternion.angleTo(new THREE.Quaternion()),holding:motions.holding,y:actor.position.y,landing:landingHeight,bounds:headBounds()});
 };

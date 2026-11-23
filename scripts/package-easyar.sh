@@ -41,7 +41,7 @@ with zipfile.ZipFile('merged.apk', 'a') as apk:
     apk.write(sys.argv[1], 'assets/easyar-license.txt', zipfile.ZIP_DEFLATED)
     with open(sys.argv[3], encoding='utf-8') as inventory:
         digests = {row['动作 ID']: row['SHA-256'] for row in csv.DictReader(inventory, delimiter='\t')}
-    selected = """grabbed jitabata locomotion_walk locomotion_left locomotion_right
+    selected = """kay_pickup ual2_walk_carry_loop grabbed jitabata locomotion_walk locomotion_left locomotion_right
         idle_normal_both_550 kay_idle_a ual2_idle_foldarms_loop hands_back_reserved_both_560
         tilt_reserved_head_616 calm_reserved_both_729 think_reserved_both_643
         sigh_reserved_both_696 wave_normal_right_661""".split()

@@ -6,6 +6,7 @@ import {Attention} from './attention.js';
 import {Roam} from './roam.js';
 import {PalmSurface} from './palm.js';
 import {ReferenceMotion} from './reference-motion.js';
+import {Coin} from './coin.js';
 import {Pickup} from './pickup.js';
 import {AreaEditor} from './area.js';
 
@@ -15,7 +16,7 @@ anchor.matrixAutoUpdate=false;camera.matrixAutoUpdate=false;
 let renderer, root, head, neck, upper, tail, ready=false, shown=false, raf=0, generation=0;
 let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
 const attention=new Attention(),roam=new Roam();
-let area,pickup,motions,deskPoseTime=-Infinity;
+let area,pickup,coin,motions,deskPoseTime=-Infinity;
 let referenceWalk=true;
 let awaySince=null,returnedAt=null,lastWave=-Infinity;
 const screenCenter=new THREE.Vector3();
@@ -87,14 +88,16 @@ function draw(now){
         const t=Math.min(1,(now-settleStart)/260);
         lateYaw=settleYaw*(1-t*t*(3-2*t));
     }
-    roam.advance(actor,dt,!!gesture || area.editing || turnStart>=0);
+    const toy=!!coin?.state;
+    if(toy)coin.step(now,dt);
+    else roam.advance(actor,dt,!!gesture || area.editing || turnStart>=0);
     gait+=(roam.speed-gait)*(1-Math.exp(-dt*10));
     actor.updateWorldMatrix(true,false);
     head.getWorldPosition(headPoint);
     const direction=actor.worldToLocal(focus.set(0,0,0)).sub(actor.worldToLocal(headPoint));
     const horizontal=Math.hypot(direction.x,direction.z);
     // During a walking route the neutral head pose looks along the actor's local +Z.
-    const walking = roam.target !== null && !gesture && !area.editing;
+    const walking = (roam.target !== null || toy && (roam.speed>0 || roam.turn)) && !gesture && !area.editing;
     const yaw=walking ? 0 : Math.atan2(direction.x,direction.z);
     const pitch=walking ? 0 : Math.atan2(direction.y,horizontal);
     // Ease sideways gaze back to center directly behind or overhead.
@@ -146,11 +149,13 @@ function draw(now){
         angles.set((referenceWalk && motions?.locomotion_walk?0:swing*gait)+impact*bend+fallback,0,0);
         applyRotation(bone,rest,basis,angles);
     }
-    const idle=!gesture && !pickup.source && !roam.target && !area.editing && turnStart<0 && now-landedAt>500;
+    const idle=!toy && !gesture && !pickup.source && !roam.target && !area.editing && turnStart<0 && now-landedAt>500;
     const wave=idle && returnedAt!==null && now-returnedAt>=700 && now-returnedAt<3500;
     if(wave){returnedAt=null;lastWave=now;}
     motions?.update(actor,now,pickup.source?(gesture?.tailContact?'tail':'head'):null,roam.phase,
         referenceWalk?gait:0,dt,idle && !palm.site,roam.turn,wave);
+    coin?.animate(motions,now);
+    if(coin)coin.button.hidden=!!palm.site || !!area.editing || !!pickup.source || !motions?.kay_pickup || !motions?.ual2_walk_carry_loop;
     if(pickup.source && gesture?.tailContact && !gesture.released)pickup.followTail(gesture);
     renderer.render(scene,camera);
     if(!sample){sample=now;count=0;}
@@ -170,6 +175,7 @@ function cancelTouch(){
     pickup?.end();gesture=null;blankTouch=null;
 }
 function hide(){
+    if(coin){coin.clear();coin.button.hidden=true;}
     if(shown && !palm.site)awaySince??=performance.now();
     returnedAt=null;
     deskPoseTime=-Infinity;motions?.reset();swayX=swayY=0;lidsUntil=-Infinity;
@@ -203,7 +209,7 @@ function pose(mv,p){
     if(faceOnPlace){
         actor.rotation.y=Math.atan2(eye.x,eye.z);
         faceOnPlace=false;
-    }else if(attention.stationaryBehind(performance.now(),eye,actor.rotation.y,!!gesture || area.editing || !!roam.target || turnStart>=0)){
+    }else if(attention.stationaryBehind(performance.now(),eye,actor.rotation.y,!!gesture || area.editing || !!roam.target || !!coin?.state || turnStart>=0)){
         roam.pause(2.5);turnToCamera(1300);
     }
     observeVisibility(now);shown=true;request();
@@ -309,6 +315,7 @@ function blankStart(e){
 function beginTouch(e){
     blankTouch=null;
     if(area.editing){area.down(e);return;}
+    if(coin?.state==='placing' && e.isPrimary){blankStart(e);return;}
     if(!shown && ready && e.isPrimary && palm.frame){
         const b=renderer.domElement.getBoundingClientRect();
         const point=palm.pick((e.clientX-b.left)/b.width,(e.clientY-b.top)/b.height);
@@ -331,12 +338,14 @@ function beginTouch(e){
     rayNear.set(pointer.x,pointer.y,-1).unproject(camera);
     rayFar.set(pointer.x,pointer.y,1).unproject(camera);
     ray.ray.set(rayNear,rayFar.sub(rayNear).normalize());
+    if(coin?.mesh.visible && ray.intersectObject(coin.mesh,true).length){coin.clear();return;}
     const hit=ray.intersectObject(root,true).find(h=>h.object.visible && h.object.material?.opacity>.15);
     const b=headBounds();
     let obj=hit?.object;
     while(obj && obj!==tail)obj=obj.parent;
     const part=obj?'tail':insideHead(e.clientX,e.clientY,b) && (hit || b.rx<=18)?'head':null;
     if(!part){if(!hit)blankStart(e);return;}
+    if(coin?.state)coin.clear();
     gesture={...b,id:e.pointerId,part,x:e.clientX,y:e.clientY,start:performance.now(),distance:0,outsideSince:0,petting:false};
     if(part==='tail' && !palm.site && motions?.jitabata)gesture.tailContact=pickup.tailContact(hit);
     gesture.crown=part==='head' && !palm.site && e.clientY<=b.cy+.06*b.ry;
@@ -384,7 +393,8 @@ function endTouch(e){
     if(blankTouch?.id===e.pointerId){
         const p=blankTouch;blankTouch=null;
         if(performance.now()-p.time<420 && Math.hypot(e.clientX-p.x,e.clientY-p.y)<9)
-            window.WhaleHost?.surfaceTap?.(e.clientX/innerWidth,e.clientY/innerHeight);
+            if(coin?.state==='placing')coin.place(e.clientX,e.clientY);
+            else window.WhaleHost?.surfaceTap?.(e.clientX/innerWidth,e.clientY/innerHeight);
         return;
     }
     if(area.editing){area.up(e);return;}
@@ -483,10 +493,11 @@ function choosePalmPoint(){palm.reset();hide();}
 function reset(){cancelTouch();palm.reset();roam.clear();area?.cancel();actor.position.set(0,0,0);faceOnPlace=true;turnStart=-1;actor.rotation.y=0;joints.forEach(([b,q])=>b.quaternion.copy(q));hide();awaySince=returnedAt=null;lastWave=-Infinity;}
 function setFrameLimit(value){frameLimit=value===30?30:60;nextFrame=sample=0;}
 function setSize(percent){
+    coin?.clear();
     actor.scale.setScalar(Math.max(.25,Math.min(2,percent/100)));
     roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
 }
-function editArea(){if(!shown || !ready)return false;cancelTouch();area.open();return true;}
+function editArea(){if(!shown || !ready)return false;cancelTouch();coin?.clear();area.open();return true;}
 window.whale={setReferenceWalk:on=>{referenceWalk=!!on;},loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,setPalmLift,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
@@ -494,6 +505,7 @@ try{
     document.body.appendChild(renderer.domElement);
     area=new AreaEditor(anchor,camera,actor,roam);
     pickup=new Pickup(anchor,camera,actor,roam,area);
+    coin=new Coin(anchor,actor,camera,area,roam);
     const canvas=renderer.domElement;
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
     canvas.addEventListener('pointerdown',beginTouch);

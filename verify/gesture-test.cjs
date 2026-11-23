@@ -21,5 +21,12 @@ await touch('touchStart',tx,ty);await p.waitForFunction(()=>peek().holding && ta
 await touch('touchMove',tx+20,ty-15);
 await p.waitForFunction(()=>tailError()!==null && tailError()<2);
 await touch('touchEnd');await p.waitForFunction(()=>!peek().holding);
+{
+    await p.locator('#coin-button').click();assert.equal(await p.evaluate(()=>coinState()),'placing');
+    const [x,y]=await p.evaluate(()=>coinPixel());await p.touchscreen.tap(x,y);
+    await p.waitForFunction(()=>coinState()==='lift');
+    await p.waitForFunction(()=>coinState()==='hold');
+    await p.locator('#coin-button').click();assert.equal(await p.evaluate(()=>coinState()),null);
+}
 assert.equal(errs.length,0);console.log('Blank tap, original hold clip '+held.clip.toFixed(2)+' s, arm rotation '+held.angle.toFixed(2)+' rad, release and next blank tap passed');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exitCode=1});
