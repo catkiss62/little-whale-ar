@@ -34,7 +34,7 @@ export class Face {
         const pet=held || squeeze || surprise?0:relaxed;
         if(held || squeeze || pet>.05){blink=0;x=0;y=0;}
         Object.assign(w,{blink,relaxed:0,eyeCircleShock:held && !dizzy && !squeeze?1:0,
-            eyeSpiral:dizzy?1:0,eyeTroubled:squeeze?1:0,mouthOpenCircle:held || surprise?1:0,
+            eyeSpiral:dizzy?1:0,eyeTroubled:squeeze?1:0,mouthOpenCircle:held?1:0,
             eyeSmile:pet,browHappy:pet,mouthSmile:.5*pet,lookLeft:Math.max(0,x),lookRight:Math.max(0,-x),
             lookUp:Math.max(0,y),lookDown:Math.max(0,-y)});
         for(const [influences,slots] of this.morphs){

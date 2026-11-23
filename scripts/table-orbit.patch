@@ -1,0 +1,82 @@
+--- a/MenthaAR/src/main/cpp/native-lib.cpp
++++ b/MenthaAR/src/main/cpp/native-lib.cpp
+@@ -48,6 +48,9 @@
+ #include "include/Config.h"
+ #include "MenthaProfiler.h"
+ #include "ArAnchor.h"
++
++// Snapshot for the synchronous TrackMonocular call on this camera thread.
++thread_local long whalePlaneMap = -1;
+ 
+ extern "C" {
+ 
+@@ -463,6 +466,10 @@
+     // 使用线程局部 Tcw，全局 Tcw 只作只读快照
+     cv::Mat localTcw;
+     if(currentSlamSys) {
++        {
++            std::lock_guard<std::mutex> lock(gMapDataMutex);
++            whalePlaneMap = gAnchor.valid && gAnchor.plane ? gAnchor.mapId : -1;
++        }
+         localTcw = currentSlamSys->TrackMonocular(imgSmall, timeStamp);
+         int localStatus = currentSlamSys->GetTrackingState();
+ 
+@@ -521,7 +528,7 @@
+     bool isLost = (status == ORB_SLAM2::Tracking::LOST);
+     const int LOST_RESET_FRAMES = (int)(LOST_RESET_TIMEOUT * ORB_SLAM2::SYSTEM_FPS);
+ 
+-    if(!isLost) {
++    if(!isLost || (whalePlaneMap >= 0 && whalePlaneMap == currentMapId)) {
+         gLostFrameCount = 0;
+     } else {
+         // SLAM处于LOST状态
+--- a/MenthaAR/src/main/cpp/src/Tracking.cc
++++ b/MenthaAR/src/main/cpp/src/Tracking.cc
+@@ -594,6 +594,8 @@
+ }
+ 
+ using namespace std;
++
++extern thread_local long whalePlaneMap;
+ 
+ namespace ORB_SLAM2
+ {
+@@ -1268,7 +1270,8 @@
+         if(mState==LOST)
+         {
+             // 多地图模式：如果丢失时间过长，创建新地图（子地图）或重置跟踪状态，确保无缝继续扫描
+-            if (mConsecutiveLostFrames > TRACKING_LOST_FRAMES_FOR_NEW_MAP)
++            if (mConsecutiveLostFrames > TRACKING_LOST_FRAMES_FOR_NEW_MAP &&
++                static_cast<long>(mpMap->mnId) != whalePlaneMap)
+             {
+                 if (mpMap->KeyFramesInMap() >= 2)
+                 {
+@@ -2099,6 +2102,7 @@
+         thRefRatio = TRACKING_KF_MONO_RATIO;
+ 
+     // 单目模式运动位移与几何视差检测
++    bool orbitKeyFrame = false;
+     bool bEnoughMotion = true;
+     if(mSensor == System::MONOCULAR && nKFs > NEW_MAP_KF_COUNT && !mCurrentFrame.mTcw.empty() && mpReferenceKF)
+     {
+@@ -2129,6 +2133,11 @@
+             rotRad = std::acos(cosTheta);
+         }
+ 
++        // Preserve overlapping views while orbiting a placed tabletop plane.
++        orbitKeyFrame = static_cast<long>(mpMap->mnId) == whalePlaneMap && bLocalMappingIdle
++            && transRatio >= 0.08f && rotRad >= 0.14f
++            && mCurrentFrame.mnId >= mnLastKeyFrameId + 8
++            && mnMatchesInliers >= TRACKING_SUCCESS_LOADED;
+         bEnoughMotion = (transRatio >= TRACKING_KF_MIN_TRANS_RATIO || rotRad >= TRACKING_KF_MIN_ROT_RAD);
+     }
+ 
+@@ -2148,7 +2157,7 @@
+     const bool c2_decay = ((inliersForDecision < nRefMatches*thRefRatio || bNeedToInsertClose) && mnMatchesInliers >= TRACKING_SUCCESS_LOADED);
+ 
+     // 综合初期快速成图(c1_init)、最大间隔保底(c1a)与视差衰减约束(c2_decay)判断是否插入关键帧
+-    const bool bNeedKeyFrame = c1_init || c1a || (bFrameGapOK && bEnoughMotion && c2_decay);
++    const bool bNeedKeyFrame = orbitKeyFrame || c1_init || c1a || (bFrameGapOK && bEnoughMotion && c2_decay);
+ 
+     if (bNeedKeyFrame)
+     {

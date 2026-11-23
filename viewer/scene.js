@@ -431,7 +431,7 @@ function playHeadSqueak(){
     if(toyAudio.state==='suspended')toyAudio.resume().catch(()=>{});
     const start=toyAudio.currentTime;
     for(const [delay,from,peak,to,length,volume] of [
-        [0,830,1490,1080,.085,.085],[.074,1140,1420,680,.115,.061]
+        [0,830,1490,1080,.085,.170],[.074,1140,1420,680,.115,.122]
     ]){
         const reed=toyAudio.createOscillator(), gain=toyAudio.createGain();
         const t=start+delay;

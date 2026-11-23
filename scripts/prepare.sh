@@ -19,6 +19,9 @@ fi
 if ! git -C upstream apply --reverse --check ../scripts/palm-preview.patch 2>/dev/null; then
   git -C upstream apply ../scripts/palm-preview.patch
 fi
+if ! git -C upstream apply --reverse --check ../scripts/table-orbit.patch 2>/dev/null; then
+  git -C upstream apply ../scripts/table-orbit.patch
+fi
 model=app/build/palm-assets/hand_landmarker.task
 digest=fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1
 if ! echo "$digest  $model" | sha256sum --check --status 2>/dev/null; then
