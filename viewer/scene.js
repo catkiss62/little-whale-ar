@@ -1,4 +1,4 @@
-import {installCapture} from './capture.js';
+import {WhaleSpeech} from './speech.js';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {prepareCharacter} from './model.js';
@@ -17,6 +17,7 @@ anchor.matrixAutoUpdate=false;camera.matrixAutoUpdate=false;
 let renderer, root, head, neck, upper, tail, ready=false, shown=false, raf=0, generation=0;
 let turnStart=-1, targetYaw=0, baseYaw=0, faceOnPlace=true;
 const attention=new Attention(),roam=new Roam();
+let voice;
 let area,pickup,coin,motions,deskPoseTime=-Infinity;
 let referenceWalk=true;
 let awaySince=null,returnedAt=null,lastWave=-Infinity;
@@ -67,7 +68,7 @@ function draw(now){
         else if(gesture.part!=='held' && (gesture.crown || gesture.tailContact) && !gesture.petting && !gesture.outsideSince && now-gesture.start>=480){
             gesture.part='held';gesture.crown=false;shakeUntil=landedAt=-Infinity;
             pickup.begin(gesture,now);turnStart=-1;
-            window.WhaleHost?.carryState?.(true);
+            window.WhaleHost?.carryState?.(true);voice.say('held');
         }
         if(pickup.source && !gesture?.tailContact && !gesture?.released)pickup.move(gesture,now);
     }
@@ -91,7 +92,10 @@ function draw(now){
         lateYaw=settleYaw*(1-t*t*(3-2*t));
     }
     const toy=!!coin?.state;
-    if(toy)coin.step(now,dt);
+    if(toy){
+        const before=coin.state;coin.step(now,dt);
+        if(before==='lift' && coin.state==='return')voice.say('coin');
+    }
     else roam.advance(actor,dt,!!gesture || area.editing || turnStart>=0);
     gait+=(roam.speed-gait)*(1-Math.exp(-dt*10));
     actor.updateWorldMatrix(true,false);
@@ -128,10 +132,13 @@ function draw(now){
     const impact=impactAge>0 && impactAge<1?Math.sin(Math.PI*impactAge):0;
     const eyelids=now<lidsUntil?Math.min(1,(lidsUntil-now)/280):0;
     const fallAge=now-landedAt;
+    if(gesture?.petting && !gesture.spoke && now-gesture.start>=450){
+        gesture.spoke=true;voice.say('pet');
+    }
     const held=!!pickup.source || fallAge<180;
     const dizzy=held && now<shakeUntil;
     const squeeze=(fallAge>=180 && fallAge<680) || (held && now>=shakeUntil && now<shakeUntil+500);
-    face.apply(Math.max(blink,tap*.75,eyelids*.55),affection,gazeX,gazeY,held,dizzy,squeeze,now-tapAt<420);
+    face.apply(Math.max(blink,tap*.75,eyelids*.55),affection,gazeX,gazeY,held,dizzy,squeeze,now-tapAt<420,voice.update(headBounds));
     updateWalkMarker(now);
     pickup.updateRipple(now);
     const recoilAge=(now-tapAt)/420;
@@ -162,6 +169,7 @@ function draw(now){
         applyRotation(bone,rest,basis,angles);
     }
     const idle=!toy && !gesture && !pickup.source && !roam.target && !area.editing && turnStart<0 && now-landedAt>500;
+    voice.idle(idle);
     const wave=idle && returnedAt!==null && now-returnedAt>=700 && now-returnedAt<3500;
     if(wave){returnedAt=null;lastWave=now;}
     motions?.update(actor,now,pickup.source?(gesture?.tailContact?'tail':'head'):null,roam.phase,
@@ -187,6 +195,7 @@ function cancelTouch(){
     pickup?.end();gesture=null;blankTouch=null;
 }
 function hide(){
+    voice?.stop();
     if(coin){coin.clear();coin.button.hidden=true;}
     if(shown && !palm.site)awaySince??=performance.now();
     returnedAt=null;shakeUntil=landedAt=-Infinity;if(walkMarker)walkMarker.visible=false;
@@ -393,7 +402,10 @@ function moveTouch(e){
         if(Math.hypot(dx,dy)>2 && dt>=0 && dt<150){
             if(dx*(g.shakeX||0)+dy*(g.shakeY||0)<0 && Math.hypot(g.shakeX,g.shakeY)>Math.max(8,g.rx*.22)){
                 g.reversals=(g.reversals||0)+1;g.shakeX=g.shakeY=0;
-                if(g.reversals>=8)shakeUntil=now+3000;
+                if(g.reversals>=8){
+                    if(now>=shakeUntil)voice.say('dizzy');
+                    shakeUntil=now+3000;
+                }
             }
             g.shakeX=(g.shakeX||0)+dx;g.shakeY=(g.shakeY||0)+dy;g.shakeAt=now;
         }
@@ -425,21 +437,10 @@ function moveTouch(e){
     }
 }
 // Two original reed-like chirps, triggered after the gesture resolves as a tap.
-let toyAudio,toyOutput;
-function audioBus(){
-    toyAudio??=new AudioContext();
-    if(!toyOutput){toyOutput=toyAudio.createGain();toyOutput.connect(toyAudio.destination);}
-    return toyOutput;
-}
-function recordAudio(){
-    const bus=audioBus(), output=toyAudio.createMediaStreamDestination();
-    bus.connect(output);
-    const track=output.stream.getAudioTracks()[0];
-    return {track,ready:toyAudio.resume(),close:()=>{bus.disconnect(output);track.stop();}};
-}
+let toyAudio;
 function playHeadSqueak(){
     if(!window.AudioContext)return;
-    const bus=audioBus();
+    toyAudio??=new AudioContext();
     if(toyAudio.state==='suspended')toyAudio.resume().catch(()=>{});
     const start=toyAudio.currentTime;
     for(const [delay,from,peak,to,length,volume] of [
@@ -454,7 +455,7 @@ function playHeadSqueak(){
         gain.gain.setValueAtTime(.0001,t);
         gain.gain.exponentialRampToValueAtTime(volume,t+.009);
         gain.gain.exponentialRampToValueAtTime(.0001,t+length);
-        reed.connect(gain).connect(bus);
+        reed.connect(gain).connect(toyAudio.destination);
         reed.onended=()=>{reed.disconnect();gain.disconnect();};
         reed.start(t);reed.stop(t+length);
     }
@@ -569,7 +570,7 @@ function setSize(percent){
     roam.pause();attention.since=null;cancelTouch();if(area?.editing)area.cancel();request();
 }
 function editArea(){if(!shown || !ready)return false;cancelTouch();coin?.clear();area.open();return true;}
-window.whale={setReferenceWalk:on=>{referenceWalk=!!on;},loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,setPalmLift,editArea};
+window.whale={stopSpeech:()=>voice?.stop(),setReferenceWalk:on=>{referenceWalk=!!on;},loadMotions,pose,palmSurface,choosePalmPoint,hide,load,reset,setFrameLimit,setSize,setPalmLift,editArea};
 try{
     renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,premultipliedAlpha:true,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor(0,0);
@@ -580,13 +581,8 @@ try{
     area=new AreaEditor(anchor,camera,actor,roam);
     pickup=new Pickup(anchor,camera,actor,roam,area);
     coin=new Coin(anchor,actor,camera,area,roam);
+    voice=new WhaleSpeech();
     const canvas=renderer.domElement;
-    whale.pauseCapture=installCapture((ctx,width,height)=>{
-        if(shown && ready){
-            renderer.render(scene,camera);
-            ctx.drawImage(canvas,0,0,width,height);
-        }
-    },recordAudio);
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
     canvas.addEventListener('pointerdown',beginTouch);
     canvas.addEventListener('pointermove',moveTouch);

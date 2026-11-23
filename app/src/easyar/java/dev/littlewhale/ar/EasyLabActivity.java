@@ -102,7 +102,6 @@ public final class EasyLabActivity extends Activity {
     private void openView() {
         if (!resumed || view != null || isFinishing()) return;
         view = new GLSurfaceView(this);
-        whale.captureFrom(view);
         view.setEGLContextClientVersion(3);
         view.setEGLConfigChooser(8, 8, 8, 8, 16, 0);
         session = new EasyLabSession(this, started);

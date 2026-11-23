@@ -29,12 +29,12 @@ export class Face {
         this.weights={blink:0,relaxed:0,lookLeft:0,lookRight:0,lookUp:0,lookDown:0};
     }
 
-    apply(blink,relaxed,x,y,held=false,dizzy=false,squeeze=false,surprise=false){
+    apply(blink,relaxed,x,y,held=false,dizzy=false,squeeze=false,surprise=false,speaking=null){
         const w=this.weights;
         const pet=held || squeeze || surprise?0:relaxed;
         if(held || squeeze || pet>.05){blink=0;x=0;y=0;}
         Object.assign(w,{blink,relaxed:0,eyeCircleShock:held && !dizzy && !squeeze?1:0,
-            eyeSpiral:dizzy?1:0,eyeTroubled:squeeze?1:0,mouthOpenCircle:held?1:0,
+            eyeSpiral:dizzy?1:0,eyeTroubled:squeeze?1:0,mouthOpenCircle:speaking===null && held?1:0,aa:speaking??0,
             eyeSmile:pet,browHappy:pet,mouthSmile:.5*pet,lookLeft:Math.max(0,x),lookRight:Math.max(0,-x),
             lookUp:Math.max(0,y),lookDown:Math.max(0,-y)});
         for(const [influences,slots] of this.morphs){

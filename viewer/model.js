@@ -7,7 +7,7 @@ export function prepareCharacter(doc) {
     for (const [key, value] of Object.entries(vrm.humanoid.humanBones))
         names[key] = doc.nodes[value.node].name;
     const channels = ['blink','relaxed','lookLeft','lookRight','lookUp','lookDown',
-        'eyeCircleShock','eyeSpiral','eyeTroubled','mouthOpenCircle','eyeSmile','mouthSmile','browHappy'];
+        'aa','eyeCircleShock','eyeSpiral','eyeTroubled','mouthOpenCircle','eyeSmile','mouthSmile','browHappy'];
     const targets = new Map(), uvBindings = new Map(), colors = new Map();
     for(const channel of channels){
         const expression=vrm.expressions?.preset?.[channel] ?? vrm.expressions?.custom?.[channel];

@@ -15,8 +15,6 @@ import java.util.List;
 final class CharacterView extends WebView {
     private static final String HOST="whale.invalid";
     private final float[] mv=new float[16], projection=new float[16];
-    private final SceneMedia media;
-    void captureFrom(android.view.View preview){media.preview=preview;}
     private float scale;
     private boolean page, pending, visiblePose, disposed, started;
     interface SurfaceTap { void tap(float x,float y); }
@@ -31,14 +29,15 @@ final class CharacterView extends WebView {
     String state="starting";
     CharacterView(Context c){
         super(c);
-        media=new SceneMedia(c);
-        addJavascriptInterface(media,"SceneAlbum");
         setBackgroundColor(Color.TRANSPARENT);
         getSettings().setJavaScriptEnabled(true);
+        getSettings().setMediaPlaybackRequiresUserGesture(false);
         getSettings().setAllowContentAccess(false);
         getSettings().setAllowFileAccess(false);
         setWebChromeClient(new WebChromeClient());
         addJavascriptInterface(new Object(){
+            @JavascriptInterface public int speechSpeed(){return c.getSharedPreferences("voice",0).getInt("speed",-1);}
+            @JavascriptInterface public void saveSpeechSpeed(int speed){if(speed>=-1 && speed<=2)c.getSharedPreferences("voice",0).edit().putInt("speed",speed).apply();}
             @JavascriptInterface public void surfaceTap(float x,float y){post(()->{
                 if(!disposed && surfaceTap!=null && x>=0 && x<=1 && y>=0 && y<=1)surfaceTap.tap(x,y);
             });}
@@ -63,10 +62,14 @@ final class CharacterView extends WebView {
                     if(!"https".equals(u.getScheme()) || !HOST.equals(u.getHost()))return missing();
                     if(parts.size()==1){
                         String name=parts.get(0);
-                        if(name.equals("camera.jpg"))return reply("image/jpeg",media.cameraFrame("photo".equals(u.getQueryParameter("mode"))));
                         if(name.equals("index.html")||name.equals("scene.bundle.js"))
                             return reply(name.endsWith(".js")?"application/javascript":"text/html",c.getAssets().open("viewer/"+name));
                         if(name.equals("model.json"))return reply("application/json",CharacterFile.range(c,true,0,0));
+                    }
+                    if(parts.size()==2 && parts.get(0).equals("voices")){
+                        String name=parts.get(1);
+                        if(name.equals("lines.json") || name.matches("[a-z]+[0-9]+[.]wav"))
+                            return reply(name.endsWith(".wav")?"audio/wav":"application/json",c.getAssets().open("voices/"+name));
                     }
                     if(parts.size()==2 && parts.get(0).equals("motions"))
                         return reply("application/octet-stream",ReferenceMotions.open(c,parts.get(1)));
@@ -146,9 +149,6 @@ final class CharacterView extends WebView {
         palmSide=null;renderFps=0;
         if(page && !disposed)evaluateJavascript("whale.choosePalmPoint()",null);
     }
-    @Override public void onPause(){
-        if(!disposed && page)evaluateJavascript("window.whale?.pauseCapture?.()",null);
-        super.onPause();
-    }
-    void close(){disposed=true;media.close();removeJavascriptInterface("SceneAlbum");removeJavascriptInterface("WhaleHost");destroy();}
+    @Override public void onPause(){if(!disposed && page)evaluateJavascript("window.whale?.stopSpeech?.()",null);super.onPause();}
+    void close(){disposed=true;removeJavascriptInterface("WhaleHost");destroy();}
 }

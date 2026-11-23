@@ -30,5 +30,13 @@ await touch('touchEnd');await p.waitForFunction(()=>!peek().holding);
 }
 const destination=await p.evaluate(()=>coinPixel());await p.touchscreen.tap(...destination);
 await p.waitForFunction(()=>walkActive());await p.waitForFunction(()=>!walkActive());
+await p.locator('#voice summary').click();
+await p.locator('#voice-preview').click();
+await p.waitForFunction(()=>speechState().time>0 && speechState().visible);
+assert.equal(await p.evaluate(()=>speechState().rate),.75);
+await p.locator('#voice-speed').selectOption('2');
+await p.locator('#voice-preview').click();
+await p.waitForFunction(()=>speechState().time>0 && speechState().rate===1.5 && speechState().pitch);
+await p.waitForFunction(()=>speechState().text.includes('尾巴'));
 assert.equal(errs.length,0);console.log('Blank tap, original hold clip '+held.clip.toFixed(2)+' s, arm rotation '+held.angle.toFixed(2)+' rad, release and next blank tap passed');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exitCode=1});
