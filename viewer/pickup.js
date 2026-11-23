@@ -13,7 +13,18 @@ export class Pickup {
             new THREE.MeshBasicMaterial({color:0x71ffd3,side:THREE.DoubleSide,depthTest:false}));
         this.marker.rotation.x=-Math.PI/2;
         this.marker.renderOrder=5;this.marker.visible=false;
+        this.ripple=new THREE.Mesh(new THREE.RingGeometry(.086,.095,48),new THREE.MeshBasicMaterial({
+            color:0x9feaff,transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide
+        }));
+        this.marker.add(this.ripple);
         anchor.add(this.marker);
+    }
+    updateRipple(now){
+        if(!this.marker.visible)return;
+        const t=((now-this.since)%900)/900;
+        this.ripple.scale.setScalar(.25+.8*t);
+        this.ripple.material.opacity=.9*(1-t);
+
     }
     tailContact(hit){
         const mesh=hit.object,face=hit.face;

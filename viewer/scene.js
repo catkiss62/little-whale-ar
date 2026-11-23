@@ -131,6 +131,7 @@ function draw(now){
     const squeeze=(fallAge>=180 && fallAge<680) || (held && now>=shakeUntil && now<shakeUntil+500);
     face.apply(Math.max(blink,tap*.75,eyelids*.55),affection,gazeX,gazeY,held,dizzy,squeeze,now-tapAt<420);
     updateWalkMarker(now);
+    pickup.updateRipple(now);
     const recoilAge=(now-tapAt)/420;
     const recoil=recoilAge<1?Math.sin(Math.PI*recoilAge)*Math.exp(-2.1*recoilAge):0;
     const trail=Math.exp(-dt/.13);swayX*=trail;swayY*=trail;
