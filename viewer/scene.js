@@ -76,7 +76,7 @@ function draw(now){
     if(landingHeight){
         const t=Math.min(1,Math.max(0,(now-landedAt)/180));
         root.position.y=standingY+landingHeight*(1-t*t);
-        if(t===1)landingHeight=0;
+        if(t===1){landingHeight=0;voice.say('landed');}
     }
     let turning=0,lateYaw=0;
     if(turnStart>=0){
@@ -96,7 +96,10 @@ function draw(now){
         const before=coin.state;coin.step(now,dt);
         if(before==='lift' && coin.state==='return')voice.say('coin');
     }
-    else roam.advance(actor,dt,!!gesture || area.editing || turnStart>=0);
+    else{
+        const walkEvent=roam.advance(actor,dt,!!gesture || area.editing || turnStart>=0);
+        if(walkEvent)voice.say(walkEvent);
+    }
     gait+=(roam.speed-gait)*(1-Math.exp(-dt*10));
     actor.updateWorldMatrix(true,false);
     head.getWorldPosition(headPoint);
@@ -137,6 +140,8 @@ function draw(now){
     }
     const held=!!pickup.source || fallAge<180;
     const dizzy=held && now<shakeUntil;
+    if(gesture?.part==='held' && !dizzy && gesture.wasDizzy)voice.say('recovered');
+    if(gesture?.part==='held')gesture.wasDizzy=dizzy;
     const squeeze=(fallAge>=180 && fallAge<680) || (held && now>=shakeUntil && now<shakeUntil+500);
     face.apply(Math.max(blink,tap*.75,eyelids*.55),affection,gazeX,gazeY,held,dizzy,squeeze,now-tapAt<420,voice.update(headBounds));
     updateWalkMarker(now);

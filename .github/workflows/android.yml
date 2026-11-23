@@ -52,8 +52,8 @@ jobs:
           character=$(find app/build/intermediates/javac -path '*/classes/dev/littlewhale/ar/CharacterView.class' -print -quit)
           test -f "$character"
           jar cf character-api.jar -C "${character%/dev/littlewhale/ar/CharacterView.class}" dev/littlewhale/ar/CharacterView.class
-          cp "$apk" unsigned-candidate-0.22.0-arm64.apk
-          sha256sum unsigned-candidate-0.22.0-arm64.apk
+          cp "$apk" unsigned-candidate-0.23.0-arm64.apk
+          sha256sum unsigned-candidate-0.23.0-arm64.apk
       - name: Collect tools for private SDK packaging
         run: |
           mkdir -p /tmp/easy-tools
@@ -66,9 +66,9 @@ jobs:
           path: /tmp/easy-tools
       - uses: actions/upload-artifact@v4
         with:
-          name: unsigned-candidate-0.22.0-arm64
+          name: unsigned-candidate-0.23.0-arm64
           path: |
-            unsigned-candidate-0.22.0-arm64.apk
+            unsigned-candidate-0.23.0-arm64.apk
             character-api.jar
           if-no-files-found: error
       - uses: actions/upload-artifact@v4

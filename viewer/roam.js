@@ -48,7 +48,7 @@ export function validate(poly,feet,size){
 }
 export class Roam {
     constructor(){this.clear();}
-    pause(seconds=1.6){this.manual=false;this.target=null;this.delay=seconds;this.speed=0;}
+    pause(seconds=1.6){this.speechPlan=null;this.spoke=false;this.manual=false;this.target=null;this.delay=seconds;this.speed=0;}
     clear(){this.polygon=[];this.phase=0;this.pause();}
     set(points){
         this.polygon=points.slice();
@@ -68,7 +68,7 @@ export class Roam {
         const p=actor.position, size=actor.scale.x;
         if(!q || distance(p,q)>3*size || distance(p,q)<.025*size)return false;
         if(this.polygon.length && !clearRoute(this.polygon,p,q,.02*size))return false;
-        this.target=q;this.manual=true;this.delay=0;
+        this.speechPlan=null;this.target=q;this.manual=true;this.delay=0;
         return true;
     }
     advance(actor,dt,blocked){
@@ -83,7 +83,12 @@ export class Roam {
             if(!this.target){this.delay=.8;return;}
         }
         const dx=this.target.x-p.x,dz=this.target.z-p.z,remaining=Math.hypot(dx,dz);
-        if(remaining<.006*size){this.pause(1.5+Math.random()*3);return;}
+        if(remaining<.006*size){
+            const say=!this.spoke && this.speechPlan?.event==='arrived';
+            this.pause(1.5+Math.random()*3);
+            if(say)return 'arrived';
+            return;
+        }
         const diff=Math.atan2(Math.sin(Math.atan2(dx,dz)-actor.rotation.y),Math.cos(Math.atan2(dx,dz)-actor.rotation.y));
         actor.rotation.y+=Math.sign(diff)*Math.min(Math.abs(diff),dt*2.9);
         if(Math.abs(diff)>.22){this.turn=diff>0?'locomotion_left':'locomotion_right';return;}
@@ -91,5 +96,17 @@ export class Roam {
         const step=Math.min(remaining,dt*.31*size*this.speed);
         p.x+=dx/remaining*step;p.z+=dz/remaining*step;
         this.phase+=step/size*23;
+        if(this.spoke)return;
+        if(!this.speechPlan){
+            const options=['walking','walking','nearGoal','arrived'];
+            if(this.manual)options.push('directed');
+            if(remaining>size*.65)options.push('longWalk');
+            this.speechPlan={event:options[Math.floor(Math.random()*options.length)],length:remaining};
+        }
+        const {event,length}=this.speechPlan;
+        if(event==='arrived' || event==='nearGoal' && remaining>length*.22 ||
+           event==='longWalk' && remaining>length*.5)return;
+        this.spoke=true;
+        return event;
     }
 }
