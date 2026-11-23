@@ -105,6 +105,11 @@ final class CharacterView extends WebView {
         visiblePose=false;beingPetted=false;renderFps=0;if(reset)scale=0;
         if(page&&!disposed)evaluateJavascript(reset?"whale.reset()":"whale.hide()",null);
     }
+    void referencePose(float[] modelView,float[] lens){
+        if(disposed || pending || !"ready".equals(state))return;
+        pending=true;visiblePose=true;
+        evaluateJavascript("whale.pose("+Arrays.toString(modelView)+","+Arrays.toString(lens)+")",unused->pending=false);
+    }
     void pose(MenthaAR.Result r,DisplayCorrection correction){
         Matrix.multiplyMM(mv,0,r.view,0,r.model,0);
         if(scale==0){if(!(mv[14]<0))return;scale=-mv[14]*.34f;}

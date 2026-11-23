@@ -21,7 +21,11 @@ public final class CoreLabActivity extends Activity {
     private final Runnable retry=this::start;
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setOnApplyWindowInsetsListener((v, insets) -> {
+            v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+            return insets;
+        });
         surface=new GLSurfaceView(this);surface.setEGLContextClientVersion(2);
         surface.setPreserveEGLContextOnPause(true);
         renderer=new CoreLabRenderer(this);surface.setRenderer(renderer);

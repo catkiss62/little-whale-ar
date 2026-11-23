@@ -59,6 +59,16 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     private void motionToast(String message){android.widget.Toast.makeText(this,message,android.widget.Toast.LENGTH_LONG).show();}
     private Button action;
     private DisplayCorrection correction;
+    private long sessionStart,firstFix=-1,firstPlacement=-1,planeRequest,lastCandidate;
+    private float[] priorPlane;
+    private int candidateMap=-1,requestedMap=-1;
+    private final float[] modelView=new float[16], clipPlane=new float[16];
+    private boolean nearAim(){
+        android.opengl.Matrix.multiplyMM(modelView,0,pose.view,0,pose.model,0);
+        android.opengl.Matrix.multiplyMM(clipPlane,0,pose.projection,0,modelView,0);
+        float w=clipPlane[15];
+        return w>0 && Math.hypot(clipPlane[12]/w,clipPlane[13]/w)<.32;
+    }
     private boolean active, tracked, placed, unavailable, placementFailed;
     private int anchorMap = -1, frames, fps;
     private long requestTime, lastResult, sampleStart;
@@ -276,7 +286,12 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
         } else if (tracked && requestTime == 0) {
             placementFailed = false;
             requestTime = SystemClock.elapsedRealtime();
-            camera.requestPlaneDetection();
+            priorPlane=pose.drawable?pose.model.clone():null;
+            requestedMap=pose.mapId;
+            if(candidateMap!=requestedMap || requestTime-lastCandidate>250){
+                camera.requestPlaneDetection();
+                planeRequest=requestTime;
+            }
         } else if (!engine.isConnected()) {
             engine.start();
         }
@@ -284,6 +299,8 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
     }
 
     private void resetAnchor() {
+        sessionStart=SystemClock.elapsedRealtime();firstFix=firstPlacement=-1;
+        planeRequest=lastCandidate=0;candidateMap=requestedMap=-1;
         requestTime = 0; placed = false; tracked = false; anchorMap = -1;
         placementFailed = false;
         lastResult = 0; sampleStart = 0; frames = 0; fps = 0;
@@ -335,6 +352,18 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             sampleStart = lastResult; frames = 0;
         }
         tracked = pose.isTracked();
+        if(!placed){
+            boolean valid=tracked && pose.drawable && correction!=null && nearAim();
+            candidateMap=valid?pose.mapId:-1;
+            if(valid)lastCandidate=now;
+            if(!tracked || (requestTime!=0 && requestedMap!=pose.mapId)){
+                requestTime=0;requestedMap=-1;
+            }
+            if(tracked && firstFix<0)firstFix=now-sessionStart;
+            if(tracked && requestTime==0 && !valid && now-planeRequest>=1400){
+                camera.requestPlaneDetection();planeRequest=now;
+            }
+        }
         otherMap = placed && tracked && pose.mapId != anchorMap;
         if (!tracked || otherMap || !pose.drawable || correction == null) { losePose(); return; }
         if (recovering) {
@@ -343,6 +372,10 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             recovering=false;
         }
         if (!placed && requestTime != 0) {
+            if(pose.mapId!=requestedMap)return;
+            if(candidateMap!=requestedMap && pose.drawable && priorPlane!=null &&
+                java.util.Arrays.equals(priorPlane,pose.model))return;
+            firstPlacement=now-requestTime;
             anchorMap = pose.mapId; placed = true; requestTime = 0;
         }
         if (placed && pose.mapId == anchorMap) {
@@ -403,10 +436,12 @@ public final class TableActivity extends ComponentActivity implements MenthaAR.L
             message = "手机已定位 · 正在寻找桌面…";
         } else {
             enabled = true;
-            message = placementFailed ? "这次未找到桌面 · 对准书封或桌面纹理，横移后重试" : "手机已定位 · 对准目标桌面，点放置";
+            message = placementFailed ? "这次未找到桌面 · 对准书封或桌面纹理，横移后重试" : candidateMap>=0?"桌面已就绪 · 点放置":"手机已定位 · 对准目标桌面，点放置";
         }
         if (!palmMode && active && fps > 0) message += "\n定位 " + fps + " FPS";
         if (showWhale && whale.renderFps>0) message += " · 角色 " + whale.renderFps + " FPS";
+        if(!palmMode && firstFix>=0)message+=" · 首次定位 "+firstFix+" ms";
+        if(!palmMode && firstPlacement>=0)message+=" · 放置 "+firstPlacement+" ms";
         if (CharacterFile.exporting) message += "\n正在导出 VRM " + CharacterFile.exportPercent + "%";
         if (!message.contentEquals(status.getText())) status.setText(message);
         if (!label.contentEquals(action.getText())) action.setText(label);
