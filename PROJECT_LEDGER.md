@@ -1,6 +1,7 @@
 # 小鲸鱼 AR 总账
 
 ## 当前接班快照
+**0.16.0+21 已实现、CI 通过、同证书签名，待真机。** 默认原生，「定位对照」按原生引擎、参考图、EasyAR、ARCore 排列。移除独立 EasyAR 按钮、水平面实验、角色设置里的方块、原生与两套 SDK 的方块绘制。EasyAR 直接打开轻量表面，保留已验证参数。ARCore 点击空白落点传给同一 V21 播放器，保留深度/水平面选项及不支持设备提示。首轮编译由于回调引用在后声明的 resumed 字段失败，调整声明顺序后 [三项 CI 全过](https://github.com/catkiss62/little-whale-ar/actions/runs/45169287945)。终包验证 v3、16 KB 对齐、SDK 与授权一致，SHA-256 `0e954d406897000f8e86b1761e3957eb5cf743c182499dead0c02cde14298a3b`。下一步确认四项入口，ARCore 落点需支持设备。动作依旧两段原片，候选入口 docs/yuchat-motion-files.tsv；本轮仅文字列出 41 段供挑选，抓尾 11.774 秒尚未接入。
 **0.16.0 开工。** 按 K80 实测淘汰较慢、落点体验较差的 EasyAR 水平面；统一四项引擎菜单并删除方块。ARCore 保留设备检测和深度/平面落点，接同一个角色。动作本轮仅列清单。
 **0.15.0+20 已实现、CI 通过、同证书签名，待 K80。** 冷启动进入原生，底栏 EasyAR 可选水平面或轻量表面角色，系统返回原生。两种 EasyAR 方块留在定位对照。角色页增加绘制活动范围入口以测试自主走路。两种步态共用目标方向：有移动目标时看身体正前，停下恢复看镜头，沿用原头眼插值速度。30/60 FPS 的转入转出检查通过。[CI 三项通过](https://github.com/catkiss62/little-whale-ar/actions/runs/45155792556)，EasyAR 终包已验授权、ARM64、16 KB 对齐及签名，SHA-256 `6573923fe2f53f52aba562381fa4b1a815095b8a2d0e6d882740e40915b42e7a`。K80 待测圈区、出发看路和停步回看。
 **VR 动作复核，仅讨论。** YuChat c3e1896c 的 XrMotionPlayer 分开 SetIdle、一次动作和循环动作，XrConversationMotion 按语音节奏及等待状态调度，XrMotionLocomotion 按待机/走/左右转/蹦步/跑加载，XrMotionToyCarry 为实际道具采样拾取。结合 docs/yuchat-motions.md，建议中立、轻松、抱臂为基础待机，背手、歪头、深呼吸或叹气间歇播一遍；鞠躬、指向和搬物按情境。开步或抓取应结束待机表现。尚未加入新片段。
